@@ -1,0 +1,18 @@
+from socket import socket, AF_INET, SOCK_STREAM
+
+
+SERVER = "localhost"
+PORT = 3001
+PATH = "/"
+
+client = socket(AF_INET, SOCK_STREAM)
+
+client.connect((SERVER, PORT))
+frame = b"0x81\0x05\0x48\0x65\0x6c\0x6c\0x6f"
+# frame = bytearray([0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f])
+# frame = bytearray([129, 5, 72, 101, 108, 108, 111])
+# frame = b"0x01\0x03\0x48\0x65\0x6c"
+# frame = b"0x80\0x02\0x6c\0x6f"
+client.send(frame)
+
+client.close()

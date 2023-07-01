@@ -1,0 +1,20 @@
+[package]
+name = "websocket-std"
+version = "0.0.2"
+edition = "2021"
+authors = ["Alejandro Palomino <alejandropalomino22@gmail.com>"]
+rust-version = "1.65.0"
+
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/alekay2200/websocket-std"
+description = """
+Implementation websocket for ESP32 rust with std.
+"""
+
+categories = ["embedded"]
+keywords = ["http", "async", "api"]
+
+[dependencies]
+bitflags = "2.3.2"
+rand = "0.8.5"
