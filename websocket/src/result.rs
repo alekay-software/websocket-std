@@ -48,6 +48,8 @@ pub enum WebSocketError {
 	IOError(io::Error),
 	/// A UTF-8 error
 	Utf8Error(Utf8Error),
+	/// Custom String Error
+	Custom(String),
     /// Other error from higher-level crate, for downcasting
 	Other(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
@@ -62,6 +64,7 @@ impl fmt::Display for WebSocketError {
 			WebSocketError::NoDataAvailable => fmt.write_str("No data available"),
 			WebSocketError::IOError(_) => fmt.write_str("I/O failure"),
 			WebSocketError::Utf8Error(_) => fmt.write_str("UTF-8 failure"),
+			WebSocketError::Custom(s) => fmt.write_str(s.as_str()),
 			WebSocketError::Other(x) => x.fmt(fmt),
 		}
 	}
