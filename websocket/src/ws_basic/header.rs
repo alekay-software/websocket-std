@@ -5,7 +5,7 @@ use bitflags::bitflags;
 
 bitflags! {
     // Type of the frame
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, Clone)]
     pub struct OPCODE: u8 {
         const CONTINUATION = 0x0;
         const TEXT = 0x1;
@@ -17,7 +17,7 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, Clone)]
     pub struct FLAG: u8 {
         // Mark this frame the last of the secuence
         const FIN = 0x80;   //  10000000
@@ -48,15 +48,18 @@ impl Header {
         Header { flag, code, mask_key, payload_len }
     }
 
+    // Return the mask if the frame is masked
     pub fn get_mask(&self) -> Option<Mask> {
         self.mask_key
     } 
 
-    pub fn get_opcode(&self) -> u8 {
-        self.code.bits()
+    // Return the opcode
+    pub fn get_opcode(&self) -> OPCODE {
+        self.code.clone()
     }
 }
 
+// Serialize header into bytes usefull for sending over sockets
 impl Serialize for Header {
     fn serialize(&self) -> Vec<u8> {
         let mut buffer: Vec<u8> = vec![];

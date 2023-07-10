@@ -11,21 +11,26 @@ pub enum FrameKind {
 }
 
 pub trait Frame {
+    // Return the data containing in the frame
     fn get_data(&self) -> &[u8];
+    // Return the header struct of the frame
     fn get_header(&self) -> &Header;
-    fn as_any(&self) -> &dyn Any; // Downcast to concrete type
+    // Downcast to concrete type
+    fn as_any(&self) -> &dyn Any;
 
+    // Return the type of the frame (Dataframe or controlframe)
     fn kind(&self) -> FrameKind {
-        let opcode: u8 = self.get_header().get_opcode();
-        if opcode == OPCODE::CLOSE.bits() || opcode == OPCODE::PING.bits()  || opcode == OPCODE::PONG.bits()  {
+        let opcode = self.get_header().get_opcode();
+        if opcode == OPCODE::CLOSE || opcode == OPCODE::PING || opcode == OPCODE::PONG  {
             return FrameKind::Control;
-        } else if opcode == OPCODE::BINARY.bits()  || opcode == OPCODE::TEXT.bits()  || opcode == OPCODE::CONTINUATION.bits()  {
+        } else if opcode == OPCODE::BINARY  || opcode == OPCODE::TEXT  || opcode == OPCODE::CONTINUATION  {
             return FrameKind::Data;
         } else {
             return FrameKind::NotDefine;
         }
     }
 
+    // Return the byte representation of the frame, useful to send through a socket
     fn serialize(&self) -> Vec<u8> {
         let mut serialized_data = vec![];
         
@@ -49,6 +54,7 @@ pub trait Frame {
     }
 }
 
+// Dataframe struct
 pub struct DataFrame {
     header: Header,
     data: Vec<u8>
@@ -60,7 +66,7 @@ impl DataFrame {
     }
 }
 
-impl Frame for DataFrame {
+impl<'a> Frame for DataFrame {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -74,7 +80,7 @@ impl Frame for DataFrame {
     }
 }
 
-
+// ControlFrame struct
 pub struct ControlFrame {
     header: Header,
     data: Vec<u8>,
@@ -106,8 +112,7 @@ impl Frame for ControlFrame {
     }
 }
 
-// Get the u64 number from the bytes asumming big endian representationç
-// Function not found propertly
+// Get the u64 number from the bytes asumming big endian representation
 fn bytes_to_u64(bytes: &[u8]) -> u64 {
     let mut buf: [u8; 8] = [0,0,0,0,0,0,0,0];
     let len = bytes.len();
@@ -121,6 +126,7 @@ fn bytes_to_u64(bytes: &[u8]) -> u64 {
     return u64::from_be_bytes(buf);
 }
 
+// Get the u64 number from the bytes asumming big endian representation
 fn bytes_to_u16(bytes: &[u8]) -> u16 {
     let mut buf: [u8; 2] = [0,0];
     let len = bytes.len();
@@ -134,7 +140,7 @@ fn bytes_to_u16(bytes: &[u8]) -> u16 {
     return u16::from_be_bytes(buf);
 }
 
-
+// Parse bytes into frames
 pub fn parse(bytes: &[u8]) -> WebSocketResult<Vec<Box<dyn Frame>>> {
     // Check if all index using to get the content from the frame are not out of the array
     let mut frames: Vec<Box<dyn Frame>> = Vec::new();
@@ -199,31 +205,15 @@ pub fn parse(bytes: &[u8]) -> WebSocketResult<Vec<Box<dyn Frame>>> {
 
         // Dataframe
         if code_bits == OPCODE::TEXT.bits() || code_bits == OPCODE::BINARY.bits() || code_bits == OPCODE::CONTINUATION.bits() {
-            let data = frame[i..payload_len as usize +i].to_vec();
-            frames.push(Box::new(DataFrame::new(header, data)));
+            let data = &frame[i..payload_len as usize +i];
+            frames.push(Box::new(DataFrame::new(header, data.to_vec())));
 
         // ControlFrame
         } else {
             let status_code = bytes_to_u16(&frame[i..i+2]);
-            let data = frame[i+2..payload_len as usize + 2].to_vec();
-            frames.push(Box::new(ControlFrame::new(header, Some(status_code), data)));
+            let data = &frame[i+2..payload_len as usize + 2];
+            frames.push(Box::new(ControlFrame::new(header, Some(status_code), data.to_vec())));
         }
-
-        // Que pasa aqui?
-        // h1 = header1 = 1 byte
-        // h1 = header2 = 1 byte
-        //         [h1 + h2 + 5 = 7] [h1 + h2 + 5 = 7] = [14] bytes de paquete tcp
-        // frames: [h1, h2, hello]   [h1, h2, hello]   = h1h2helloh3h4hello
-        // i = 2
-        // payload_len = 5
-        // frame = h1h2helloh3h4hello
-        // frame = frame[7..14] = h3h4hello
-
-        // i = 2
-        // payload_len = 5
-        // frame = frame[7..14] = h3h4hello
-        //
-        // frame = 
 
         frame = &frame[i + payload_len as usize .. frame.len()];
 

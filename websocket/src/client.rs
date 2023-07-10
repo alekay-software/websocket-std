@@ -97,7 +97,7 @@ impl<'a> SyncClient<'a> {
         self.response_cb = Some(cb);
     }
 
-    pub fn send_message(&mut self, payload: &str) -> WebSocketResult<()> {
+    pub fn send_message(&mut self, payload: &'a str) -> WebSocketResult<()> {
         let mut frames: Vec<Box<dyn Frame>> = Vec::new();
 
         // Send single message
@@ -170,7 +170,7 @@ impl<'a> SyncClient<'a> {
     }
 
     fn handle_control_frame(&mut self, frame: &ControlFrame) -> WebSocketResult<()> {
-        match OPCODE::from_bits(frame.get_header().get_opcode()).unwrap() {
+        match frame.get_header().get_opcode() {
             OPCODE::PING=> { 
                 // Create a PONG frame. Set masked App data if the PING frame contains any App data
                 // println!("[CLIENT]: PING received data -> {}", String::from_utf8(frame.get_data().to_vec()).unwrap());
