@@ -63,11 +63,13 @@ pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketRes
     Ok(client)
 }
 
-// TODO: Create a trait to send and receive data from the websocket
-// TODO: Queues for messages to send
-// TODO: Queues for messages to receive
-// TODO: Evento loop must send and receive messages from the queues
-// TODO: Decide if write or read messages
+// [] TODO: Implement framable trait (trait to split the data into frames)
+// [] TODO: Create a trait to send and receive data from the websocket
+// [x] TODO: Queues for messages to send
+// [] TODO: Queues for messages to receive
+// [x] TODO: Event loop must send messages from the queues
+// [] TODO: Event loop must receive messages from the queues
+// [] TODO: Decide if write or read messages
 pub struct SyncClient<'a> {
     host: &'a str,
     port: u16,
@@ -76,11 +78,13 @@ pub struct SyncClient<'a> {
     response_cb: Option<fn(&str)>,
     stream: TcpStream,
     reader: BufReader<TcpStream>,
+    // Store frames that the client wants to send to the websocket
+    send_queue: Vec<Box<dyn Frame>>
 }
 
 impl<'a> SyncClient<'a> {
     fn new(host: &'a str, port: u16, path: &'a str, stream: &TcpStream) -> Self {
-        SyncClient { host, port, path, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream: stream.try_clone().unwrap(), reader: BufReader::new(stream.try_clone().unwrap()), data: Vec::new() }
+        SyncClient { host, port, path, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream: stream.try_clone().unwrap(), reader: BufReader::new(stream.try_clone().unwrap()), send_queue: Vec::new() }
     }
 
     // TODO: The message size does not take into account
@@ -93,13 +97,14 @@ impl<'a> SyncClient<'a> {
         self.response_cb = Some(cb);
     }
 
-    // TODO: Implement framable trait (trait to split the data into frames)
-    pub fn send_message(&mut self, payload: String) -> WebSocketResult<()> {
+    pub fn send_message(&mut self, payload: &str) -> WebSocketResult<()> {
+        let mut frames: Vec<Box<dyn Frame>> = Vec::new();
+
         // Send single message
         if payload.len() as u64 <= self.message_size {
             let header = Header::new(FLAG::FIN, OPCODE::TEXT, Some(mask::gen_mask()), payload.len() as u64);
             let dataframe = DataFrame::new(header, payload.as_bytes().to_vec());
-            self.stream.write_all(dataframe.serialize().as_slice())?;
+            frames.push(Box::new(dataframe));
     
         // Split into frames and send 
         } else {
@@ -113,11 +118,13 @@ impl<'a> SyncClient<'a> {
                 let code = if data_sent == 0 { OPCODE::TEXT } else { OPCODE::CONTINUATION };
                 let header = Header::new(flag, code, Some(mask::gen_mask()), payload_chunk.len() as u64);
                 let frame = DataFrame::new(header, payload_chunk.to_vec());
-                self.stream.write_all(frame.serialize().as_slice())?;
+                frames.push(Box::new(frame));
                 data_sent += self.message_size as usize;
             }
         }
         
+        self.send_queue.extend(frames);
+
         Ok(())
     }
 
@@ -125,6 +132,16 @@ impl<'a> SyncClient<'a> {
     // TODO: What's happend if a close frame es received from the server?
     pub fn event_loop(&mut self) -> WebSocketResult<()> {
 
+        // handle one frame from the send_queue
+        let frame = self.send_queue.pop();
+
+        if frame.is_some() {
+            let frame = frame.unwrap();
+            let serialized_frame = frame.serialize();
+            self.stream.write_all(serialized_frame.as_slice())?;
+        }
+
+        // Read new frame from the server
         let data = read_entire_tcp_package(&mut self.reader)?;
         
         // If the frame is not the last, keep in memory to continue append following data
@@ -156,7 +173,7 @@ impl<'a> SyncClient<'a> {
         match OPCODE::from_bits(frame.get_header().get_opcode()).unwrap() {
             OPCODE::PING=> { 
                 // Create a PONG frame. Set masked App data if the PING frame contains any App data
-                println!("[CLIENT]: PING received data -> {}", String::from_utf8(frame.get_data().to_vec()).unwrap());
+                // println!("[CLIENT]: PING received data -> {}", String::from_utf8(frame.get_data().to_vec()).unwrap());
                 let data = frame.get_data();
                 let mask = if data.len() > 0 { Some(mask::gen_mask()) } else { None };
                 let header = Header::new(FLAG::FIN, OPCODE::PONG, mask, data.len() as u64);

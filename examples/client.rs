@@ -19,7 +19,7 @@ fn main() -> WebSocketResult<()> {
 
     // client.set_message_size(800000);
     let msg = String::from("Hello from websocket-std");
-    client.send_message(msg)?;
+    client.send_message(msg.as_str())?;
 
     // sleep(Duration::from_secs(20));
     let start = Instant::now();
