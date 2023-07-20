@@ -1,9 +1,10 @@
 use websocket_std::result::WebSocketResult;
-use websocket_std::{sync_connect, client::SyncClient};
+use websocket_std::client::{sync_connect, SyncClient};
 use std::time::{Duration, Instant};
 use std::thread::sleep;
 
-fn on_message(msg: &str) {
+
+fn on_message(msg: String) {
     println!("[SERVER RESPONSE]: {}", msg);
 }
 
@@ -18,13 +19,14 @@ fn main() -> WebSocketResult<()> {
     client.set_response_cb(on_message);
 
     // client.set_message_size(800000);
+
     let msg = String::from("Hello from websocket-std");
-    client.send_message(msg.as_str())?;
+
+    client.send_message(msg)?;
 
     // sleep(Duration::from_secs(20));
     let start = Instant::now();
     loop {
-        // println!("[MAIN]: Event Loop");
         client.event_loop()?;
         if start.elapsed().as_secs() >= 70 { break }
     }

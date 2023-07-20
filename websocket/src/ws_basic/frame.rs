@@ -66,7 +66,7 @@ impl DataFrame {
     }
 }
 
-impl<'a> Frame for DataFrame {
+impl Frame for DataFrame {
     fn as_any(&self) -> &dyn Any {
         self
     }

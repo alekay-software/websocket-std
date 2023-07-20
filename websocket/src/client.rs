@@ -20,6 +20,9 @@ fn generate_key() -> String {
 }
 
 // TODO: Confirm that the handshake is accepted
+/*
+Hola que tal willy
+*/
 pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketResult<SyncClient<'a>> {
     // Create a tcpstream to the host
     let mut socket = TcpStream::connect(format!("{}:{}", host, port.to_string()))?;
@@ -75,7 +78,7 @@ pub struct SyncClient<'a> {
     port: u16,
     path: &'a str,
     message_size: u64,
-    response_cb: Option<fn(&str)>,
+    response_cb: Option<fn(String)>,
     stream: TcpStream,
     reader: BufReader<TcpStream>,
     // Store frames that the client wants to send to the websocket
@@ -93,11 +96,11 @@ impl<'a> SyncClient<'a> {
     }
 
     // TODO: This function is only for text messages, pass to the callback information about the type of the frame
-    pub fn set_response_cb(&mut self, cb: fn(&str)) {
+    pub fn set_response_cb(&mut self, cb: fn(String)) {
         self.response_cb = Some(cb);
     }
 
-    pub fn send_message(&mut self, payload: &'a str) -> WebSocketResult<()> {
+    pub fn send_message(&mut self, payload: String) -> WebSocketResult<()> {
         let mut frames: Vec<Box<dyn Frame>> = Vec::new();
 
         // Send single message
@@ -159,7 +162,7 @@ impl<'a> SyncClient<'a> {
 
             for frame in frames {
                 match frame.kind()  {
-                    FrameKind::Data => { self.response_cb.unwrap()(str::from_utf8(frame.get_data())?); },
+                    FrameKind::Data => { self.response_cb.unwrap()(String::from_utf8(frame.get_data().to_vec()).unwrap()); },
                     FrameKind::Control => { self.handle_control_frame(frame.as_any().downcast_ref::<ControlFrame>().unwrap()); },
                     FrameKind::NotDefine => return Err(WebSocketError::ProtocolError("OPCODE not supported"))
                 };
