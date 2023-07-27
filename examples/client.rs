@@ -9,8 +9,8 @@ fn on_message(msg: String) {
 }
 
 fn main() -> WebSocketResult<()> {
-    let host: &'static str = "127.0.0.1"; // Make static lifetime, &str lives for the entire lifetime of the running program.
-    let port: u16 = 3000;
+    let host: &'static str = "192.168.1.141"; // Make static lifetime, &str lives for the entire lifetime of the running program.
+    let port: u16 = 3001;
     let path: &'static str = "/";
 
     let mut client: SyncClient<'static> = sync_connect(host, port, path)?;

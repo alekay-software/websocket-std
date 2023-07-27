@@ -20,9 +20,6 @@ fn generate_key() -> String {
 }
 
 // TODO: Confirm that the handshake is accepted
-/*
-Hola que tal willy
-*/
 pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketResult<SyncClient<'a>> {
     // Create a tcpstream to the host
     let mut socket = TcpStream::connect(format!("{}:{}", host, port.to_string()))?;
@@ -45,7 +42,7 @@ pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketRes
     // Ensure that all data was sent
     socket.flush()?;
 
-    let mut reader = BufReader::new(socket.try_clone()?);
+    let mut reader = BufReader::new(&socket);
 
     // Read current current data in the TcpStream
     let mut buffer = String::new();
@@ -60,8 +57,7 @@ pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketRes
     
     // Set socket to non-blocking mode
     socket.set_nonblocking(true)?;
-    let stream = socket.try_clone()?;
-    let client = SyncClient::new(host, port, path, &stream);
+    let client = SyncClient::new(host, port, path, socket);
 
     Ok(client)
 }
@@ -73,6 +69,7 @@ pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketRes
 // [x] TODO: Event loop must send messages from the queues
 // [] TODO: Event loop must receive messages from the queues
 // [] TODO: Decide if write or read messages
+// [] TODO: Send the size of the buffer to read data from the stream, so the client will decide the perfomance base on the memory available or the size of the messages that the system is going to receive
 pub struct SyncClient<'a> {
     host: &'a str,
     port: u16,
@@ -80,14 +77,13 @@ pub struct SyncClient<'a> {
     message_size: u64,
     response_cb: Option<fn(String)>,
     stream: TcpStream,
-    reader: BufReader<TcpStream>,
     // Store frames that the client wants to send to the websocket
     send_queue: Vec<Box<dyn Frame>>
 }
 
 impl<'a> SyncClient<'a> {
-    fn new(host: &'a str, port: u16, path: &'a str, stream: &TcpStream) -> Self {
-        SyncClient { host, port, path, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream: stream.try_clone().unwrap(), reader: BufReader::new(stream.try_clone().unwrap()), send_queue: Vec::new() }
+    fn new(host: &'a str, port: u16, path: &'a str, stream: TcpStream) -> Self {
+        SyncClient { host, port, path, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, send_queue: Vec::new() }
     }
 
     // TODO: The message size does not take into account
@@ -145,7 +141,7 @@ impl<'a> SyncClient<'a> {
         }
 
         // Read new frame from the server
-        let data = read_entire_tcp_package(&mut self.reader)?;
+        let data = read_entire_tcp_package(&mut self.stream)?;
         
         // If the frame is not the last, keep in memory to continue append following data
         
@@ -214,12 +210,16 @@ impl<'a> Drop for SyncClient<'a> {
     // At this point the client could receive messages from the server
     // Send response for all messages and wait until close is received
     // TODO: Use read function from the client to read from the socket
-    let mut data = self.reader.fill_buf().unwrap().to_vec();
-    self.reader.consume(data.len());
+    // TODO: Read the maximun size of a control frame to create an array of this size
+    let mut buf: [u8; 2048] = [0; 2048];
+    let mut data = 0;
+    while data <= 0 {
+        let mut data = self.stream.read(&mut buf).unwrap();
+    }
 
     // Try parse data into a frame
     // TODO: Wait until close frame is received
-    let response = parse(data.as_slice());
+    let response = parse(buf.as_slice());
 
     match response {
         Ok(frames) => {
