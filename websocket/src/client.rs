@@ -1,18 +1,23 @@
 use std::net::{TcpStream, Shutdown};
 use std::io::{BufReader, BufRead, Read, Write};
 use std::format;
-use crate::core::net::read_entire_tcp_package;
 use crate::result::WebSocketError;
 use crate::ws_basic::mask;
 use crate::ws_basic::header::{Header, OPCODE, FLAG};
-use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, parse, FrameKind};
+use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, parse, FrameKind, read_frame};
 use crate::core::traits::Serialize;
 use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use core::str;
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
+
+#[derive(PartialEq)]
+enum EventType {
+    SEND,
+    RECEIVED
+}
 
 // TODO: Generate a random string key and store into the client
 fn generate_key() -> String {
@@ -77,13 +82,15 @@ pub struct SyncClient<'a> {
     message_size: u64,
     response_cb: Option<fn(String)>,
     stream: TcpStream,
-    // Store frames that the client wants to send to the websocket
-    send_queue: Vec<Box<dyn Frame>>
+    event_queue: VecDeque<(EventType, Box<dyn Frame>)>,     // Events that the event loop will execute
+    recv_storage: Vec<u8>,                                  // Storage to keep the bytes received from the socket
+    send_queue: VecDeque<Box<dyn Frame>>,                    // Store frames to send                                
+    recv_data: Vec<u8>                                       // Store the data received from the Frames until the data is completelly received
 }
 
 impl<'a> SyncClient<'a> {
     fn new(host: &'a str, port: u16, path: &'a str, stream: TcpStream) -> Self {
-        SyncClient { host, port, path, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, send_queue: Vec::new() }
+        SyncClient { host, port, path, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new() }
     }
 
     // TODO: The message size does not take into account
@@ -96,18 +103,16 @@ impl<'a> SyncClient<'a> {
         self.response_cb = Some(cb);
     }
 
+    // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
     pub fn send_message(&mut self, payload: String) -> WebSocketResult<()> {
-        let mut frames: Vec<Box<dyn Frame>> = Vec::new();
-
         // Send single message
         if payload.len() as u64 <= self.message_size {
             let header = Header::new(FLAG::FIN, OPCODE::TEXT, Some(mask::gen_mask()), payload.len() as u64);
             let dataframe = DataFrame::new(header, payload.as_bytes().to_vec());
-            frames.push(Box::new(dataframe));
+            self.event_queue.push_back((EventType::SEND, Box::new(dataframe)));
     
         // Split into frames and send 
         } else {
-            // let frames = payload.len() as u64 / self.frame_size;
             let mut data_sent = 0;
             while data_sent < payload.len() {
                 let mut i = data_sent + self.message_size as usize; 
@@ -117,54 +122,87 @@ impl<'a> SyncClient<'a> {
                 let code = if data_sent == 0 { OPCODE::TEXT } else { OPCODE::CONTINUATION };
                 let header = Header::new(flag, code, Some(mask::gen_mask()), payload_chunk.len() as u64);
                 let frame = DataFrame::new(header, payload_chunk.to_vec());
-                frames.push(Box::new(frame));
+
+                // Put the first frame of the split into the event_queue
+                if data_sent <= 0 {
+                    self.event_queue.push_back((EventType::SEND, Box::new(frame)))
+                // The rest of the frames goes to the send_queue
+                } else {
+                    self.send_queue.push_back(Box::new(frame));
+                }
                 data_sent += self.message_size as usize;
             }
         }
-        
-        self.send_queue.extend(frames);
 
         Ok(())
+
     }
 
     // TODO: I'm assuming a lot of wrong things
     // TODO: What's happend if a close frame es received from the server?
     pub fn event_loop(&mut self) -> WebSocketResult<()> {
 
-        // handle one frame from the send_queue
-        let frame = self.send_queue.pop();
+        // Try to read Frames from the socket
+        let frame = read_frame(&mut self.stream, &mut self.recv_storage)?;
+        if frame.is_some() { self.event_queue.push_back((EventType::RECEIVED, frame.unwrap())); }
 
-        if frame.is_some() {
-            let frame = frame.unwrap();
-            let serialized_frame = frame.serialize();
-            self.stream.write_all(serialized_frame.as_slice())?;
+        // Insert more frames from the send queue
+        let frame = self.send_queue.pop_front();
+        if frame.is_some() { self.event_queue.push_back((EventType::SEND, frame.unwrap())); }
+
+        // Take one frame from the event loop queue
+        let res = self.event_queue.pop_front();
+        if res.is_none() { return Ok(()) }  // No events to handle
+
+        // Frame to handle
+        let (event_type, frame) = res.unwrap();
+
+        if event_type == EventType::RECEIVED {
+            match frame.kind()  {
+                FrameKind::Data => { 
+                    if frame.get_header().get_flag() != FLAG::FIN {
+                        self.recv_data.extend_from_slice(frame.get_data());
+                    }
+
+                    if self.response_cb.is_some() {
+                        let callback = self.response_cb.unwrap();
+
+                        let res = String::from_utf8(frame.get_data().to_vec());
+                        if res.is_err() { return Err(WebSocketError::Utf8Error(res.err().unwrap().utf8_error())); }
+                        
+                        let msg = res.unwrap();
+
+                        // Message received in a single frame
+                        if self.recv_data.is_empty() {
+                            callback(msg);
+
+                        // Message from a multiples frames     
+                        } else {
+                            let previous_data = self.recv_data.clone();
+                            let res = String::from_utf8(previous_data);
+                            if res.is_err() { return Err(WebSocketError::Utf8Error(res.err().unwrap().utf8_error())); }
+                            
+                            let mut completed_msg = res.unwrap();
+                            completed_msg.push_str(msg.as_str());
+
+                            // Send the message to the callback function
+                            callback(completed_msg);
+
+                            // Remove from memory
+                            // TODO: Test if is better to just clear the vector and maintain the capacity allocated
+                            drop(&self.recv_data);
+                            self.recv_data = Vec::new();
+                        }
+                    }
+                },
+                FrameKind::Control => { return self.handle_control_frame(frame.as_any().downcast_ref::<ControlFrame>().unwrap()); },
+                FrameKind::NotDefine => return Err(WebSocketError::ProtocolError("OPCODE not supported"))
+            };
+        // EventType == SEND    
+        } else {
+            self.stream.write_all(frame.serialize().as_slice())?;
         }
-
-        // Read new frame from the server
-        let data = read_entire_tcp_package(&mut self.stream)?;
         
-        // If the frame is not the last, keep in memory to continue append following data
-        
-        if data.len() > 0 && self.response_cb.is_some() {
-            // Get data from the frame
-            // If is last frame send all the message
-            // Right now assume that the data is an unique frame
-            // If the last message was not readed completelly, add the other part
-            
-            let frames = parse(data.as_slice())?;
-            
-            // TODO: More than osdne frame could be receive in the same tcp package     
-            // TODO: Is last frame? or need to store until the rest of the parts arrive?
-
-            for frame in frames {
-                match frame.kind()  {
-                    FrameKind::Data => { self.response_cb.unwrap()(String::from_utf8(frame.get_data().to_vec()).unwrap()); },
-                    FrameKind::Control => { self.handle_control_frame(frame.as_any().downcast_ref::<ControlFrame>().unwrap()); },
-                    FrameKind::NotDefine => return Err(WebSocketError::ProtocolError("OPCODE not supported"))
-                };
-            }
-            
-        }
         Ok(())
     }
 

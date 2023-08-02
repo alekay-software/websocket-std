@@ -1,5 +1,7 @@
 use super::mask::Mask;
 use super::super::core::traits::Serialize;
+use super::super::result::{WebSocketResult, WebSocketError};
+use super::super::core::binary::{bytes_to_u16, bytes_to_u64};
 
 use bitflags::bitflags;
 
@@ -17,7 +19,7 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(PartialEq, Eq, Clone)]
+    #[derive(PartialEq, Eq, Clone, Copy)]
     pub struct FLAG: u8 {
         // Mark this frame the last of the secuence
         const FIN = 0x80;   //  10000000
@@ -56,6 +58,10 @@ impl Header {
     // Return the opcode
     pub fn get_opcode(&self) -> OPCODE {
         self.code.clone()
+    }
+
+    pub fn get_flag(&self) -> FLAG {
+        self.flag
     }
 }
 

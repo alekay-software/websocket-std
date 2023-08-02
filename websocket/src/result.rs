@@ -29,6 +29,7 @@ use std::fmt;
 use std::convert::From;
 use std::error::Error;
 use std::io;
+use std::string::FromUtf8Error;
 
 // Define type for WebSocketStdResult
 pub type WebSocketResult<T> = Result<T, WebSocketError>;
