@@ -339,7 +339,7 @@ pub fn read_frame(reader: &mut dyn Read, storage: &mut Vec<u8>) -> WebSocketResu
     // use net function to put data into the buffer and try to create a socket with the data in the storage and the data readed
     // If a frame is created, the rest of the data readed from the socket must be save into the storage vector
     let res = read_into_buffer(reader, &mut buf);
-    if res.is_err() { return Err(WebSocketError::IOError(res.unwrap_err())); }
+    if res.is_err() { return Err(res.unwrap_err()); }
 
     let amount = res.unwrap();
     if amount <= 0 { return Ok(None); }

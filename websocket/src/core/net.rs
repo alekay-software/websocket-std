@@ -1,28 +1,24 @@
-use std::io::{Read, Error, self, ErrorKind};
+use std::io::{Read, ErrorKind};
+use crate::result::{WebSocketResult, WebSocketError};
 
-/*
-Reads an entire tcp package from the Reader.
-When using TCPStreams, to get the full message multiples calls to read method
-has to be done because the reader has a buffer capacity, each time the fill_buf function is called
-the buffer is going to fill with all the data. If the amount of data is greatest than the capacity of 
-the buffer, then you should call fill_buff multiples times in order to read the entire data.
- */
-pub fn read_into_buffer(reader: &mut dyn Read, buf: &mut [u8]) -> Result<usize, Error> {
+/// Copy bytes from the reader into the buffer and return amount of data read.
+/// - If an EOF is reached the function will return a ``WebSocketError::Custom``because no more bytes can be read.
+/// - If there's no bytes ready to read from the reader the function will return ``Ok(0)`` bytes readed and the buffer will not be modified.
+/// - If there's bytes the function will return ``Ok(n)`` where 0 < n <= buf.len()
+/// - Otherwise a ``WebSocketError::IOError`` will be return.
+pub fn read_into_buffer(reader: &mut dyn Read, buf: &mut [u8]) -> WebSocketResult<usize> {
     match reader.read(buf) {
         Ok(amount) => {
             // Reached end of file (error in the connection)
             if amount <= 0 {
-                return Err(Error::new(io::ErrorKind::ConnectionReset, "Connection reset by peer"));
+                return Err(WebSocketError::Custom(String::from("Reached EOF, no more bytes can be read from this reader. If the reader is a socket probably the connections with the peer was closed")));
             } else {
                 return Ok(amount);
             }
         },
         Err(e) => {
             if e.kind() == ErrorKind::WouldBlock { return Ok(0) }
-            return Err(e);
+            return Err(WebSocketError::IOError(e)); // grcov-excl-line
         }
     }
 }
-
-#[cfg(test)]
-mod test {}
