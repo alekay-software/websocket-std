@@ -29,7 +29,7 @@ use std::fmt;
 use std::convert::From;
 use std::error::Error;
 use std::io;
-use std::string::FromUtf8Error;
+use core::array;
 
 // Define type for WebSocketStdResult
 pub type WebSocketResult<T> = Result<T, WebSocketError>;
@@ -49,6 +49,8 @@ pub enum WebSocketError {
 	IOError(io::Error),
 	/// A UTF-8 error
 	Utf8Error(Utf8Error),
+	/// Error converting slice to array
+	TryFromSliceError(array::TryFromSliceError),
 	/// Custom String Error
 	Custom(String),
     /// Other error from higher-level crate, for downcasting
@@ -65,6 +67,7 @@ impl fmt::Display for WebSocketError {
 			WebSocketError::NoDataAvailable => fmt.write_str("No data available"),
 			WebSocketError::IOError(_) => fmt.write_str("I/O failure"),
 			WebSocketError::Utf8Error(_) => fmt.write_str("UTF-8 failure"),
+			WebSocketError::TryFromSliceError(_) => fmt.write_str("TryFromSliceError"),
 			WebSocketError::Custom(s) => fmt.write_str(s.as_str()),
 			WebSocketError::Other(x) => x.fmt(fmt),
 		}

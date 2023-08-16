@@ -5,6 +5,11 @@ use std::time::Duration;
 use std::thread::sleep;
 use crate::result::WebSocketError;
 
+// -------------------------------------------------------------------------------------------------------- //
+//                                               net.rs
+// -------------------------------------------------------------------------------------------------------- //
+
+
 // Setup server and client socket
 // Client socket must be in not_blocking mode
 // Test run in parallel so create socket with different ports to avoid errors taken the same address
@@ -51,7 +56,7 @@ fn eof_reached () {
     
     match error {
         WebSocketError::Custom(_) => assert!(true),
-        e => panic!("Unreachable: {}", e) 
+        e => panic!("Unreachable: {}", e) // grcov-excl-line 
     }
 
     client.shutdown(Shutdown::Both);
@@ -130,3 +135,39 @@ fn read_more_than_buffer_capacity () {
     before_each(server, client);
 }
 
+// -------------------------------------------------------------------------------------------------------- //
+//                                               binary.rs
+// -------------------------------------------------------------------------------------------------------- //
+use super::binary::*;
+
+#[test]
+fn valid_bytes_to_u16 () {
+    let bytes = [67,218];
+    let res = bytes_to_u16(bytes.as_slice());
+    assert!(res.is_ok());
+    let value: u16 = (256u16.pow(1) * 67) + (256u16.pow(0) * 218);
+    assert_eq!(res.unwrap(), value);
+}
+
+#[test]
+fn invalid_bytes_to_u16 () {
+    let bytes = [8,0,1];
+    let res = bytes_to_u16(bytes.as_slice());
+    assert!(res.is_err());
+}
+
+#[test]
+fn valid_bytes_to_u64 () {
+    let bytes = [1,0,0,0,0,0,5,255];
+    let res = bytes_to_u64(bytes.as_slice());
+    assert!(res.is_ok());
+    let value: u64 = (256u64.pow(7) * 1) + (256u64.pow(1) * 5) + (256u64.pow(0) * 255);
+    assert_eq!(res.unwrap(), value);
+}
+
+#[test]
+fn invalid_bytes_to_u64 () {
+    let bytes = [8,0,1];
+    let res = bytes_to_u64(bytes.as_slice());
+    assert!(res.is_err());
+}

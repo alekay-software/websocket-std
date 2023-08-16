@@ -152,10 +152,10 @@ pub fn parse(bytes: &[u8]) -> WebSocketResult<Vec<Box<dyn Frame>>> {
 
         if payload_len == 126 {
             i = 4;
-            payload_len = bytes_to_u16(&frame[2..4]) as u64;
+            payload_len = bytes_to_u16(&frame[2..4]).unwrap() as u64;
         } else if payload_len == 127 {
             i = 10;
-            payload_len = bytes_to_u64(&frame[2..10]);
+            payload_len = bytes_to_u64(&frame[2..10]).unwrap();
         }
 
         // Frame not received completelly due to buffers from the OS
@@ -184,7 +184,7 @@ pub fn parse(bytes: &[u8]) -> WebSocketResult<Vec<Box<dyn Frame>>> {
 
         // ControlFrame
         } else {
-            let status_code = bytes_to_u16(&frame[i..i+2]);
+            let status_code = bytes_to_u16(&frame[i..i+2]).unwrap();
             let data = &frame[i+2..payload_len as usize + 2];
             frames.push(Box::new(ControlFrame::new(header, Some(status_code), data.to_vec())));
         }
@@ -234,10 +234,10 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
 
     if payload_len == 126 {
         i = 4;
-        payload_len = bytes_to_u16(&bytes[2..4]) as u64;
+        payload_len = bytes_to_u16(&bytes[2..4]).unwrap() as u64;
     } else if payload_len == 127 {
         i = 10;
-        payload_len = bytes_to_u64(&bytes[2..10]);
+        payload_len = bytes_to_u64(&bytes[2..10]).unwrap();
     }
 
     // bytes not received completelly due to buffers from the OS
@@ -268,7 +268,7 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
 
     // ControlFrame
     } else {
-        let status_code = bytes_to_u16(&bytes[i..i+2]);
+        let status_code = bytes_to_u16(&bytes[i..i+2]).unwrap();
         let data = &bytes[i+2..payload_len as usize + 2];
         return Ok(Some((Box::new(ControlFrame::new(header, Some(status_code), data.to_vec())), offset)));
     }
