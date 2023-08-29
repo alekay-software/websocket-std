@@ -22,19 +22,18 @@ fn main() -> WebSocketResult<()> {
 
     client.set_response_cb(on_message);
 
-    client.set_message_size(28);
+    client.set_message_size(1024);
 
     let msg = String::from("Hello from websocket-std");
 
     client.send_message(msg)?;
-    client.send_message(String::from("Este mensaje debe ir antes que el super largo")).unwrap(); 
 
     // sleep(Duration::from_secs(20));
     let start = Instant::now();
     let mut i = 0;
     loop {
         client.event_loop()?;
-        if start.elapsed().as_secs() >= 500 { break }
+        if start.elapsed().as_secs() >= 5 { break }
     }
 
     Ok(())

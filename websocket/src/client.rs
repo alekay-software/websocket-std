@@ -4,14 +4,16 @@ use std::format;
 use crate::result::WebSocketError;
 use crate::ws_basic::mask;
 use crate::ws_basic::header::{Header, OPCODE, FLAG};
-use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, parse, FrameKind, read_frame};
+use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, FrameKind, read_frame};
 use crate::core::traits::Serialize;
 use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use std::collections::{HashMap, VecDeque};
 use core::str;
+use std::time::Instant;
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
+const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
 #[derive(PartialEq)]
 enum EventType {
@@ -79,6 +81,7 @@ pub struct SyncClient<'a> {
     host: &'a str,
     port: u16,
     path: &'a str,
+    connection_closed: bool,
     message_size: u64,
     response_cb: Option<fn(String)>,
     stream: TcpStream,
@@ -90,7 +93,7 @@ pub struct SyncClient<'a> {
 
 impl<'a> SyncClient<'a> {
     fn new(host: &'a str, port: u16, path: &'a str, stream: TcpStream) -> Self {
-        SyncClient { host, port, path, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new() }
+        SyncClient { host, port, path, connection_closed: false, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new() }
     }
 
     // TODO: The message size does not take into account
@@ -220,7 +223,13 @@ impl<'a> SyncClient<'a> {
 
             },
             OPCODE::PONG => { todo!("Not implemented handle PONG") },
-            OPCODE::CLOSE => { todo!("Not implemented handle CLOSE frame")},
+            OPCODE::CLOSE => {
+                self.connection_closed = true; 
+                // todo!("Not implemented handle CLOSE frame");
+                // TODO: If the client start the close handshake nothing to do
+                // TODO: If the server start the close handsahke handle the response.
+                println!("[CLIENT]: Connection close received")
+            },
             _ => return Err(WebSocketError::ProtocolError("Invalid OPCODE for Control Frame"))
         }
 
@@ -231,109 +240,63 @@ impl<'a> SyncClient<'a> {
 // TODO: Refactor de code
 impl<'a> Drop for SyncClient<'a> {
     fn drop(&mut self) {
-    
-    // TODO: Send all messages in the queue
-    // TODO: Read messages and send responses until close frame is received in response of our close frame
+        
+        // TODO: Send all messages in the queue
+        // TODO: Read messages and send responses until close frame is received in response of our close frame
 
-    let msg = "Done";
-    let mask = Some(mask::gen_mask());
-    let header = Header::new(FLAG::FIN, OPCODE::CLOSE, mask, msg.len() as u64 + 2);
-    let status_code: u16 = 1000;
-    let control_frame = ControlFrame::new(header, Some(status_code), msg.as_bytes().to_vec());
+        let msg = "Done";
+        let mask = Some(mask::gen_mask());
+        let header = Header::new(FLAG::FIN, OPCODE::CLOSE, mask, msg.len() as u64 + 2);
+        let status_code: u16 = 1000;
+        let close_frame = ControlFrame::new(header, Some(status_code), msg.as_bytes().to_vec());
 
-    self.stream.set_nonblocking(false);
+        // Add close frame into the queue
+        self.event_queue.push_back((EventType::SEND, Box::new(close_frame)));
 
-    self.stream.write_all(control_frame.serialize().as_slice());
-
-    // At this point the client could receive messages from the server
-    // Send response for all messages and wait until close is received
-    // TODO: Use read function from the client to read from the socket
-    // TODO: Read the maximun size of a control frame to create an array of this size
-    let mut buf: [u8; 2048] = [0; 2048];
-    let mut data = 0;
-    while data <= 0 {
-        let mut data = self.stream.read(&mut buf).unwrap();
-    }
-
-    // Try parse data into a frame
-    // TODO: Wait until close frame is received
-    let response = parse(buf.as_slice());
-
-    match response {
-        Ok(frames) => {
-            // let d = str::from_utf8(frame.get_data());
-            let data = frames[0].get_data();
-            let msg =  str::from_utf8(&data[2..data.len()]).unwrap();
-            println!("[CLIENT CLOSE]: Response from server -> {}", msg);
-        },
-        Err(_) => { }
-    }
-
-    self.stream.shutdown(Shutdown::Both);
-    // // Set socket to block mode
-    // self.stream.set_nonblocking(false);
-
-    // // Send close frame (Connection close normal)
-    // let mut frame: Vec<u8> = vec![];
-    // const CLOSE_NORMAL: u16 = 1000;
+        let timeout = Instant::now();
+        // Send response for all messages in the queue
+        // TODO: Add timeout
+        // TODO: Check if the boolean condition is ok.
+        while !self.event_queue.is_empty() || !self.connection_closed {
+            self.event_loop();
+        }
             
-    // let mut header1: u8 = 0b10000000;
-    // let mut header2: u8 = 0b10000000;
+        // At this point the client could receive messages from the server
+        // TODO: Use read function from the client to read from the socket
+        // TODO: Read the maximun size of a control frame to create an array of this size
+        // TODO: Wait until close frame is received
+        // let timeout = Instant::now();
+        // loop {
+        //     if timeout.elapsed().as_secs() >= DEFAULT_MESSAGE_SIZE { 
+        //         println!("[CLIENT CLOSE]: Close handshake timeout, no response from server received.");
+        //         break 
+        //     }
+        //     let response = read_frame(&mut self.stream, &mut self.recv_storage);
 
-    // // Ensure that reason is not greater than 125 bytes (payload max length for control frames)
-    // let reason = String::from("Done");
-    // header1 |= OPCODE::CLOSE.bits();
-    // header2 |= (reason.len() + 2) as u8;
+        //     match response {
+        //         Ok(frame) => {
+        //             if frame.is_none() { continue }
+        //             let frame = frame.unwrap();
 
-    // let mask = mask::gen_mask();
+        //             match frame.kind() {
+        //                 FrameKind::Data => 
+        //                     if self.response_cb.is_some() { 
+        //                     let res = String::from_utf8(frame.get_data().to_vec());
 
-    // // Add header1, header2 and mask to the frame
-    // frame.push(header1);
-    // frame.push(header2);
-    // frame.extend(mask);
+        //                 },
+        //                 FrameKind::Control => self.handle_control_frame(frame.as_any().downcast_ref::<ControlFrame>().unwrap()).unwrap(),
+        //                 FrameKind::NotDefine => continue
+        //             }
 
-    // let mut app_data: Vec<u8> = vec![];
-    // app_data.extend(CLOSE_NORMAL.to_be_bytes());
-    // app_data.extend(reason.as_bytes());
+        //             let data = frame.get_data();
+        //             let msg =  str::from_utf8(&data[2..data.len()]).unwrap();
+        //             println!("[CLIENT CLOSE]: Response from server -> {}", msg);
+        //         },
+        //         Err(_) => { }
+        //     }
+        // }
 
-    // // Mask reaseon
-    // let mut i = 0;
-    // for byte in app_data {
-    //     frame.push(byte ^ mask[i]);
-    //     i += 1;
-    //     if i >= 4 { i = 0 }
-    // }
-
-    // println!("{:?}", frame);
-
-    // // Send close frame (Wath to do with result or error?)
-    // self.stream.write_all(frame.as_slice());
-
-
-    // // At this point the client could receive messages from the server
-    // // Send response for all messages and wait until close is received
-    // let mut data = self.reader.fill_buf().unwrap().to_vec();
-    // self.reader.consume(data.len());
-
-    // // Just to test
-    // // Take directly the bytes from the application data
-    // let mut status_code_bytes: [u8; 2] = [0; 2];
-    // status_code_bytes[0] = data[2];
-    // status_code_bytes[1] = data[3];
-
-    // let payload_len: u8 = data[1];
-
-    // // Read status code
-    // let status_code: u16 = u16::from_be_bytes(status_code_bytes);
-
-    // // Read reason
-    // let (_, reason) = data.split_at(4);
-
-    // println!("DATA: {:?}", data);
-    
-
-    // // Get Reason (I know that the reason length is 6 (2 (status_code) + 4 (reason)) but it's necessary to read from the header)
-    // println!("Connection closed (Payload Length): {}", payload_len);
-    // println!("Connection closed: {}", String::from_utf8(reason.to_vec()).unwrap());
-    }  
+        // Close the socket.
+        self.stream.shutdown(Shutdown::Both);
+    }
 }
