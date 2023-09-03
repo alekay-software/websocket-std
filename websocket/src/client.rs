@@ -1,5 +1,7 @@
 use std::net::{TcpStream, Shutdown};
 use std::io::{BufReader, BufRead, Read, Write};
+use std::collections::{HashMap, VecDeque};
+use std::time::Instant;
 use std::format;
 use crate::result::WebSocketError;
 use crate::ws_basic::mask;
@@ -8,9 +10,6 @@ use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, FrameKind, read_fra
 use crate::core::traits::Serialize;
 use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
-use std::collections::{HashMap, VecDeque};
-use core::str;
-use std::time::Instant;
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
@@ -77,6 +76,8 @@ pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketRes
 // [] TODO: Event loop must receive messages from the queues
 // [] TODO: Decide if write or read messages
 // [] TODO: Send the size of the buffer to read data from the stream, so the client will decide the perfomance base on the memory available or the size of the messages that the system is going to receive
+// Remove warning dead code for [host, port, path] fields. The Client keeps this information because could be useful in the future.
+#[allow(dead_code)]
 pub struct SyncClient<'a> {
     host: &'a str,
     port: u16,
@@ -153,7 +154,7 @@ impl<'a> SyncClient<'a> {
         let frame = self.send_queue.pop_front();
         if frame.is_some() { self.event_queue.push_back((EventType::SEND, frame.unwrap())); }
 
-        // Take one frame from the event loop queue
+        // Take one frame from the eve  nt loop queue
         let res = self.event_queue.pop_front();
         if res.is_none() { return Ok(()) }  // No events to handle
 
@@ -190,11 +191,15 @@ impl<'a> SyncClient<'a> {
 
                             // Send the message to the callback function
                             callback(completed_msg);
-
-                            // Remove from memory
-                            // TODO: Test if is better to just clear the vector and maintain the capacity allocated
-                            drop(&self.recv_data);
+                            
+                            // There is 2 ways to deal with the vector data:
+                            // 1 - Remove from memory (takes more time)
+                            //         Creating a new vector produces that the old vector will be dropped (deallocating the memory)
                             self.recv_data = Vec::new();
+
+                            // // 2 - Use the clear method (takes more memory because we never drop it)
+                            // //         The vector does not remove memory that has already been allocated.
+                            // self.recv_data.clear();
                         }
                     }
                 },
@@ -240,63 +245,30 @@ impl<'a> SyncClient<'a> {
 // TODO: Refactor de code
 impl<'a> Drop for SyncClient<'a> {
     fn drop(&mut self) {
-        
-        // TODO: Send all messages in the queue
-        // TODO: Read messages and send responses until close frame is received in response of our close frame
-
         let msg = "Done";
         let mask = Some(mask::gen_mask());
         let header = Header::new(FLAG::FIN, OPCODE::CLOSE, mask, msg.len() as u64 + 2);
         let status_code: u16 = 1000;
         let close_frame = ControlFrame::new(header, Some(status_code), msg.as_bytes().to_vec());
 
-        // Add close frame into the queue
+        // Add close frame at the end of the queue.
         self.event_queue.push_back((EventType::SEND, Box::new(close_frame)));
 
         let timeout = Instant::now();
-        // Send response for all messages in the queue
-        // TODO: Add timeout
-        // TODO: Check if the boolean condition is ok.
+ 
+        // Process a response for all the events and confirm that the connection was closed.
         while !self.event_queue.is_empty() || !self.connection_closed {
-            self.event_loop();
+            if timeout.elapsed().as_secs() >= DEFAULT_TIMEOUT_SECS { break } // Close handshake timeout.
+            let result = self.event_loop();
+            if result.is_ok() { continue }
+            let err = result.err().unwrap();
+
+            match err {
+                WebSocketError::SocketError(_) => { break }, // If get an error with the socket, terminate the close handshake.
+                _ => { continue }
+            }
+
         }
-            
-        // At this point the client could receive messages from the server
-        // TODO: Use read function from the client to read from the socket
-        // TODO: Read the maximun size of a control frame to create an array of this size
-        // TODO: Wait until close frame is received
-        // let timeout = Instant::now();
-        // loop {
-        //     if timeout.elapsed().as_secs() >= DEFAULT_MESSAGE_SIZE { 
-        //         println!("[CLIENT CLOSE]: Close handshake timeout, no response from server received.");
-        //         break 
-        //     }
-        //     let response = read_frame(&mut self.stream, &mut self.recv_storage);
-
-        //     match response {
-        //         Ok(frame) => {
-        //             if frame.is_none() { continue }
-        //             let frame = frame.unwrap();
-
-        //             match frame.kind() {
-        //                 FrameKind::Data => 
-        //                     if self.response_cb.is_some() { 
-        //                     let res = String::from_utf8(frame.get_data().to_vec());
-
-        //                 },
-        //                 FrameKind::Control => self.handle_control_frame(frame.as_any().downcast_ref::<ControlFrame>().unwrap()).unwrap(),
-        //                 FrameKind::NotDefine => continue
-        //             }
-
-        //             let data = frame.get_data();
-        //             let msg =  str::from_utf8(&data[2..data.len()]).unwrap();
-        //             println!("[CLIENT CLOSE]: Response from server -> {}", msg);
-        //         },
-        //         Err(_) => { }
-        //     }
-        // }
-
-        // Close the socket.
-        self.stream.shutdown(Shutdown::Both);
+        let _ = self.stream.shutdown(Shutdown::Both); // Ignore result from shutdown method.
     }
 }
