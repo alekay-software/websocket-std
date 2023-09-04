@@ -6,6 +6,7 @@ use super::super::core::binary::{bytes_to_u16, bytes_to_u64};
 use std::io::Read;
 use super::super::core::net::read_into_buffer;
 
+#[derive(PartialEq)]
 pub enum FrameKind {
     Data,
     Control,

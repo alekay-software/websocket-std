@@ -20,6 +20,14 @@ enum EventType {
     RECEIVED
 }
 
+#[allow(non_camel_case_types)]
+#[derive(PartialEq)]
+enum ConnectionStatus { 
+    OPEN,
+    CLOSED_BY_CLIENT,
+    CLOSED_BY_SERVER
+}
+
 // TODO: Generate a random string key and store into the client
 fn generate_key() -> String {
     return String::from("dGhlIHNhbXBsZSBub25jZQ==");
@@ -82,7 +90,7 @@ pub struct SyncClient<'a> {
     host: &'a str,
     port: u16,
     path: &'a str,
-    connection_closed: bool,
+    connection_status: ConnectionStatus,
     message_size: u64,
     response_cb: Option<fn(String)>,
     stream: TcpStream,
@@ -94,7 +102,7 @@ pub struct SyncClient<'a> {
 
 impl<'a> SyncClient<'a> {
     fn new(host: &'a str, port: u16, path: &'a str, stream: TcpStream) -> Self {
-        SyncClient { host, port, path, connection_closed: false, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new() }
+        SyncClient { host, port, path, connection_status: ConnectionStatus::OPEN, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new() }
     }
 
     // TODO: The message size does not take into account
@@ -109,6 +117,8 @@ impl<'a> SyncClient<'a> {
 
     // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
     pub fn send_message(&mut self, payload: String) -> WebSocketResult<()> {
+        if self.connection_status != ConnectionStatus::OPEN { return Ok(()) } // The connection was closed, no more data can be send
+
         // Send single message
         if payload.len() as u64 <= self.message_size {
             let header = Header::new(FLAG::FIN, OPCODE::TEXT, Some(mask::gen_mask()), payload.len() as u64);
@@ -145,6 +155,9 @@ impl<'a> SyncClient<'a> {
     // TODO: I'm assuming a lot of wrong things
     // TODO: What's happend if a close frame es received from the server?
     pub fn event_loop(&mut self) -> WebSocketResult<()> {
+        // TODO: Stop reading frames from the socket if the client closed the connection
+        // (self.connection_status == ConnectionStatus::OPEN || self.connection_status == ConnectionStatus::CLOSED_BY_SERVER) 
+
 
         // Try to read Frames from the socket
         let frame = read_frame(&mut self.stream, &mut self.recv_storage)?;
@@ -161,6 +174,7 @@ impl<'a> SyncClient<'a> {
         // Frame to handle
         let (event_type, frame) = res.unwrap();
 
+        // If the client close the connection the received frames 
         if event_type == EventType::RECEIVED {
             match frame.kind()  {
                 FrameKind::Data => { 
@@ -208,6 +222,10 @@ impl<'a> SyncClient<'a> {
             };
         // EventType == SEND    
         } else {
+            if frame.kind() == FrameKind::Control && frame.get_header().get_opcode() == OPCODE::CLOSE { 
+                // The client wants to close the connection
+                self.connection_status = ConnectionStatus::CLOSED_BY_CLIENT;
+            }
             self.stream.write_all(frame.serialize().as_slice())?;
         }
         
@@ -229,7 +247,11 @@ impl<'a> SyncClient<'a> {
             },
             OPCODE::PONG => { todo!("Not implemented handle PONG") },
             OPCODE::CLOSE => {
-                self.connection_closed = true; 
+                match self.connection_status {
+                    ConnectionStatus::OPEN => {},
+                    ConnectionStatus::CLOSED_BY_CLIENT => {},
+                    ConnectionStatus::CLOSED_BY_SERVER => {}
+                }
                 // todo!("Not implemented handle CLOSE frame");
                 // TODO: If the client start the close handshake nothing to do
                 // TODO: If the server start the close handsahke handle the response.
@@ -257,7 +279,7 @@ impl<'a> Drop for SyncClient<'a> {
         let timeout = Instant::now();
  
         // Process a response for all the events and confirm that the connection was closed.
-        while !self.event_queue.is_empty() || !self.connection_closed {
+        while !self.event_queue.is_empty() || self.connection_status != ConnectionStatus::OPEN {
             if timeout.elapsed().as_secs() >= DEFAULT_TIMEOUT_SECS { break } // Close handshake timeout.
             let result = self.event_loop();
             if result.is_ok() { continue }
