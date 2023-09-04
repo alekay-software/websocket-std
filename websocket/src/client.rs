@@ -76,6 +76,8 @@ pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketRes
     Ok(client)
 }
 
+// [] TODO: Cerrar el socket cuando la conexion se ha cerrado por alguno de los 2 puntos y la cola de mensajes esta vacia.
+// [] TODO: Event loop debe dar error cuando al conexion esta cerrada y todos los mensajes enviados.
 // [] TODO: Implement framable trait (trait to split the data into frames)
 // [] TODO: Create a trait to send and receive data from the websocket
 // [x] TODO: Queues for messages to send
@@ -94,12 +96,14 @@ pub struct SyncClient<'a> {
     message_size: u64,
     response_cb: Option<fn(String)>,
     stream: TcpStream,
-    event_queue: VecDeque<(EventType, Box<dyn Frame>)>,     // Events that the event loop will execute
-    recv_storage: Vec<u8>,                                  // Storage to keep the bytes received from the socket
+    event_queue: VecDeque<(EventType, Box<dyn Frame>)>,      // Events that the event loop will execute
+    recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket
     send_queue: VecDeque<Box<dyn Frame>>,                    // Store frames to send                                
     recv_data: Vec<u8>                                       // Store the data received from the Frames until the data is completelly received
 }
 
+// TODO: No se implementa la funcion de cierre de la conexion, la conexion se cierra cuando termina la vida del cliente
+// TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
 impl<'a> SyncClient<'a> {
     fn new(host: &'a str, port: u16, path: &'a str, stream: TcpStream) -> Self {
         SyncClient { host, port, path, connection_status: ConnectionStatus::OPEN, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new() }
@@ -117,7 +121,15 @@ impl<'a> SyncClient<'a> {
 
     // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
     pub fn send_message(&mut self, payload: String) -> WebSocketResult<()> {
-        if self.connection_status != ConnectionStatus::OPEN { return Ok(()) } // The connection was closed, no more data can be send
+        // Connection was closed
+        if self.connection_status != ConnectionStatus::OPEN { 
+            let msg = match self.connection_status {
+                ConnectionStatus::CLOSED_BY_CLIENT => String::from("Connection closed by client"),
+                ConnectionStatus::CLOSED_BY_SERVER => String::from("Connection closed by server"),
+                ConnectionStatus::OPEN => String::from("")
+            };
+            return Err(WebSocketError::ConnectionClose(msg)) // The connection was closed, no more data can be send
+        } 
 
         // Send single message
         if payload.len() as u64 <= self.message_size {
@@ -218,7 +230,7 @@ impl<'a> SyncClient<'a> {
                     }
                 },
                 FrameKind::Control => { return self.handle_control_frame(frame.as_any().downcast_ref::<ControlFrame>().unwrap()); },
-                FrameKind::NotDefine => return Err(WebSocketError::ProtocolError("OPCODE not supported"))
+                FrameKind::NotDefine => return Err(WebSocketError::ProtocolError(String::from("OPCODE not supported")))
             };
         // EventType == SEND    
         } else {
@@ -248,16 +260,26 @@ impl<'a> SyncClient<'a> {
             OPCODE::PONG => { todo!("Not implemented handle PONG") },
             OPCODE::CLOSE => {
                 match self.connection_status {
-                    ConnectionStatus::OPEN => {},
-                    ConnectionStatus::CLOSED_BY_CLIENT => {},
-                    ConnectionStatus::CLOSED_BY_SERVER => {}
+                    ConnectionStatus::OPEN => {
+                        // Check the status code 1000, 1001, 1002...
+
+                        // Server wants to  close the connection
+                        // Enqueue close frame to response to the server
+                        let payload: &[u8] = frame.get_data();
+                        let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), payload.len() as u64);
+                        let close_frame = ControlFrame::new(header, Some(1000), payload.to_vec());
+                        self.event_queue.push_back((EventType::SEND, Box::new(close_frame)));
+                        
+                        // Set connection status
+                        self.connection_status = ConnectionStatus::CLOSED_BY_SERVER;
+                        println!("Server wants to close the connection");
+                    },
+                    ConnectionStatus::CLOSED_BY_CLIENT => {}, // Nothing to do for now, we cou
+                    ConnectionStatus::CLOSED_BY_SERVER => {}  // Unreachable  
                 }
-                // todo!("Not implemented handle CLOSE frame");
-                // TODO: If the client start the close handshake nothing to do
-                // TODO: If the server start the close handsahke handle the response.
                 println!("[CLIENT]: Connection close received")
             },
-            _ => return Err(WebSocketError::ProtocolError("Invalid OPCODE for Control Frame"))
+            _ => return Err(WebSocketError::ProtocolError(String::from("Invalid OPCODE for Control Frame")))
         }
 
         Ok(())
