@@ -35,9 +35,7 @@ pub trait Frame {
 
     // Return the byte representation of the frame, useful to send through a socket
     fn serialize(&self) -> Vec<u8> {
-        let mut serialized_data = vec![];
-        
-        serialized_data.extend(self.get_header().serialize());
+        let mut serialized_data = self.get_header().serialize();
 
         match self.get_header().get_mask() {
             // Apply mask to data
