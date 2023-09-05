@@ -55,7 +55,7 @@ fn eof_reached () {
     let error = res.err().unwrap();
     
     match error {
-        WebSocketError::Custom(_) => assert!(true),
+        WebSocketError::ConnectionClose(_) => assert!(true),
         e => panic!("Unreachable: {}", e) // grcov-excl-line 
     }
 

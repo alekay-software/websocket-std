@@ -25,7 +25,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use std::str::Utf8Error;
-use std::fmt;
+use std::fmt::{self, Write};
 use std::convert::From;
 use std::error::Error;
 use std::io;
@@ -38,7 +38,7 @@ pub type WebSocketResult<T> = Result<T, WebSocketError>;
 #[derive(Debug)]
 pub enum WebSocketError {
 	/// A WebSocket protocol error
-	ProtocolError(&'static str),
+	ProtocolError(String),
 	/// Invalid WebSocket data frame error
 	DataFrameError(&'static str),
 	// Socket error
@@ -52,7 +52,7 @@ pub enum WebSocketError {
 	/// Error converting slice to array
 	TryFromSliceError(array::TryFromSliceError),
 	/// Custom String Error
-	Custom(String),
+	ConnectionClose(String),
     /// Other error from higher-level crate, for downcasting
 	Other(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
@@ -61,14 +61,14 @@ impl fmt::Display for WebSocketError {
 	fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
 		fmt.write_str("WebSocketError: ")?;
 		match self {
-			WebSocketError::ProtocolError(_) => fmt.write_str("WebSocket protocol error"),
+			WebSocketError::ProtocolError(msg) => fmt.write_str(msg.as_str()),
 			WebSocketError::DataFrameError(_) => fmt.write_str("WebSocket data frame error"),
 			WebSocketError::SocketError(msg) => fmt.write_str(msg),
 			WebSocketError::NoDataAvailable => fmt.write_str("No data available"),
 			WebSocketError::IOError(_) => fmt.write_str("I/O failure"),
 			WebSocketError::Utf8Error(_) => fmt.write_str("UTF-8 failure"),
 			WebSocketError::TryFromSliceError(_) => fmt.write_str("TryFromSliceError"),
-			WebSocketError::Custom(s) => fmt.write_str(s.as_str()),
+			WebSocketError::ConnectionClose(msg) => fmt.write_str(msg.as_str()),
 			WebSocketError::Other(x) => x.fmt(fmt),
 		}
 	}

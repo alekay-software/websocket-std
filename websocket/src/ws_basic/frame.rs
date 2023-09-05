@@ -51,7 +51,7 @@ pub trait Frame {
             None => serialized_data.extend(self.get_data())
         }
 
-        return serialized_data; 
+        return serialized_data;
     }
 }
 
@@ -128,7 +128,7 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
     if flag.is_none() { 
         let mut msg = String::from("Invalid flag: ");
         msg.push_str(bytes[0].to_string().as_str());
-        return Err(WebSocketError::Custom(msg));
+        return Err(WebSocketError::ProtocolError(msg));
     }
     
     // code
@@ -136,7 +136,7 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
     if  code.is_none() { 
         let mut msg = String::from("Invalid opcode: ");
         msg.push_str(bytes[1].to_string().as_str());
-        return Err(WebSocketError::Custom(msg));
+        return Err(WebSocketError::ProtocolError(msg));
     }
 
     let is_masked = (0b10000000 & bytes[1]) == 1;
