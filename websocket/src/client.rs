@@ -301,7 +301,7 @@ impl<'a> Drop for SyncClient<'a> {
         let timeout = Instant::now();
  
         // Process a response for all the events and confirm that the connection was closed.
-        while !self.event_queue.is_empty() || self.connection_status != ConnectionStatus::OPEN {
+        while !self.event_queue.is_empty() && self.connection_status == ConnectionStatus::OPEN {
             if timeout.elapsed().as_secs() >= DEFAULT_TIMEOUT_SECS { break } // Close handshake timeout.
             let result = self.event_loop();
             if result.is_ok() { continue }
