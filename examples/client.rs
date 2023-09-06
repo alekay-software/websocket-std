@@ -13,7 +13,7 @@ fn on_message(msg: String) {
 }
 
 fn main() -> WebSocketResult<()> {
-    let host: &'static str = "192.168.1.141"; // Make static lifetime, &str lives for the entire lifetime of the running program.
+    let host: &'static str = "localhost"; // Make static lifetime, &str lives for the entire lifetime of the running program.
     let port: u16 = 3001;
     let path: &'static str = "/";
 
@@ -31,8 +31,9 @@ fn main() -> WebSocketResult<()> {
     let start = Instant::now();
     loop {
         client.event_loop()?;
-        if start.elapsed().as_secs() >= 10 { break }
+        if start.elapsed().as_secs() >= 60 { break }
     }
-
+    
+    println!("Terminanting main");
     Ok(())
 }

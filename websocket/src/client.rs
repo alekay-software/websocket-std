@@ -7,7 +7,9 @@ use crate::result::WebSocketError;
 use crate::ws_basic::mask;
 use crate::ws_basic::header::{Header, OPCODE, FLAG};
 use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, FrameKind, read_frame};
+use crate::ws_basic::status_code::{WSStatus, evaulate_status_code};
 use crate::core::traits::Serialize;
+use crate::core::binary::bytes_to_u16;
 use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 
@@ -24,8 +26,9 @@ enum EventType {
 #[derive(PartialEq)]
 enum ConnectionStatus { 
     OPEN,
-    CLOSED_BY_CLIENT,
-    CLOSED_BY_SERVER
+    CLIENT_WANTS_TO_CLOSE,
+    SERVER_WANTS_TO_CLOSE,
+    CLOSE
 }
 
 // TODO: Generate a random string key and store into the client
@@ -95,6 +98,7 @@ pub struct SyncClient<'a> {
     connection_status: ConnectionStatus,
     message_size: u64,
     response_cb: Option<fn(String)>,
+    // close_cb: Option<fn(u16, String)>,                       // Close callback, receives status code an reason
     stream: TcpStream,
     event_queue: VecDeque<(EventType, Box<dyn Frame>)>,      // Events that the event loop will execute
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket
@@ -124,9 +128,10 @@ impl<'a> SyncClient<'a> {
         // Connection was closed
         if self.connection_status != ConnectionStatus::OPEN { 
             let msg = match self.connection_status {
-                ConnectionStatus::CLOSED_BY_CLIENT => String::from("Connection closed by client"),
-                ConnectionStatus::CLOSED_BY_SERVER => String::from("Connection closed by server"),
-                ConnectionStatus::OPEN => String::from("")
+                ConnectionStatus::CLIENT_WANTS_TO_CLOSE => String::from("Client started close handshake"),
+                ConnectionStatus::SERVER_WANTS_TO_CLOSE => String::from("Server started close handshake"),
+                ConnectionStatus::OPEN => String::from(""),
+                ConnectionStatus::CLOSE => String::from("Connection was terminated")
             };
             return Err(WebSocketError::ConnectionClose(msg)) // The connection was closed, no more data can be send
         } 
@@ -168,11 +173,29 @@ impl<'a> SyncClient<'a> {
     // TODO: What's happend if a close frame es received from the server?
     pub fn event_loop(&mut self) -> WebSocketResult<()> {
         // TODO: Stop reading frames from the socket if the client closed the connection
-        // (self.connection_status == ConnectionStatus::OPEN || self.connection_status == ConnectionStatus::CLOSED_BY_SERVER) 
+        // (self.connection_status == ConnectionStatus::OPEN || self.connection_status == ConnectionStatus::SERVER_WANTS_TO_CLOSE) 
 
+        // To not read more frames if the connection is closed, check if there are data in the socket, if and EOF error is received then stop reading 
+        // frames for future event iterations
+        // If the error is raised check if the connection was closed by the client or the server
 
         // Try to read Frames from the socket
-        let frame = read_frame(&mut self.stream, &mut self.recv_storage)?;
+        let res = read_frame(&mut self.stream, &mut self.recv_storage);
+
+        // Check if the stream is closed due the close handshake
+        let mut frame = None;
+        if res.is_err() {
+            let e = res.err().unwrap();
+            match e {
+                WebSocketError::ConnectionClose(_) => {
+                    if self.connection_status == ConnectionStatus::OPEN { return Err(e); }
+                },
+                _ => return Err(e)
+            }
+        } else {
+            frame = res.unwrap();
+        }
+
         if frame.is_some() { self.event_queue.push_back((EventType::RECEIVED, frame.unwrap())); }
 
         // Insert more frames from the send queue
@@ -234,11 +257,16 @@ impl<'a> SyncClient<'a> {
             };
         // EventType == SEND    
         } else {
-            if frame.kind() == FrameKind::Control && frame.get_header().get_opcode() == OPCODE::CLOSE { 
-                // The client wants to close the connection
-                self.connection_status = ConnectionStatus::CLOSED_BY_CLIENT;
+            if frame.kind() == FrameKind::Control && frame.get_header().get_opcode() == OPCODE::CLOSE && self.connection_status == ConnectionStatus::OPEN { 
+                self.connection_status = ConnectionStatus::CLIENT_WANTS_TO_CLOSE;
+            } else if frame.kind() == FrameKind::Control && frame.get_header().get_opcode() == OPCODE::CLOSE && self.connection_status == ConnectionStatus::SERVER_WANTS_TO_CLOSE {
+                self.connection_status = ConnectionStatus::CLOSE;
             }
             self.stream.write_all(frame.serialize().as_slice())?;
+
+            if self.connection_status == ConnectionStatus::CLOSE { 
+                self.stream.shutdown(Shutdown::Both)?;
+            }
         }
         
         Ok(())
@@ -259,23 +287,58 @@ impl<'a> SyncClient<'a> {
             },
             OPCODE::PONG => { todo!("Not implemented handle PONG") },
             OPCODE::CLOSE => {
-                match self.connection_status {
-                    ConnectionStatus::OPEN => {
-                        // Check the status code 1000, 1001, 1002...
+                let status_code = &frame.get_data()[0..2];
+                let res = bytes_to_u16(status_code);
 
-                        // Server wants to  close the connection
-                        // Enqueue close frame to response to the server
-                        let payload: &[u8] = frame.get_data();
-                        let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), payload.len() as u64);
-                        let close_frame = ControlFrame::new(header, Some(1000), payload.to_vec());
-                        self.event_queue.push_back((EventType::SEND, Box::new(close_frame)));
-                        
-                        // Set connection status
-                        self.connection_status = ConnectionStatus::CLOSED_BY_SERVER;
+                // Server sent and invalid status code, close the connection
+                // TODO: The client should clean the event_queue and close the connection in the next interation?
+                if res.is_err() { 
+                    let reason = "Error decoding status code";
+                    let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), (reason.len() + 2) as u64);
+                    let close_frame = ControlFrame::new(header, Some(WSStatus::PROTOCOL_ERROR.bits()), reason.as_bytes().to_vec());
+                    self.event_queue.clear();
+                    self.event_queue.push_front((EventType::SEND, Box::new(close_frame)));
+                    return Ok(())
+                }   
+                
+                let status_code = res.unwrap();
+
+                match self.connection_status {
+                    // Server wants to close the connection
+                    ConnectionStatus::OPEN => {
                         println!("Server wants to close the connection");
+                        let status_code = WSStatus::from_bits(status_code);
+                        
+                        // TODO: ¿Close the connection and clean the entire queue?
+                        if status_code.is_none() {
+                            let reason = "Unkwon status code";
+                            let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), (reason.len() + 2) as u64);
+                            let close_frame = ControlFrame::new(header, Some(WSStatus::PROTOCOL_ERROR.bits()), reason.as_bytes().to_vec());
+                            self.event_queue.clear();
+                            self.event_queue.push_front((EventType::SEND, Box::new(close_frame)));
+                            return Ok(())
+                        }
+                        
+                        let status_code = status_code.unwrap();
+                        let (error, _) = evaulate_status_code(status_code);
+
+                        // Enqueue close frame to response to the server
+                        let payload: &[u8] = frame.get_data(); // Respond with the same reason and status code
+                        let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), payload.len() as u64);
+                        let close_frame = ControlFrame::new(header, None, payload.to_vec());
+                        self.event_queue.push_front((EventType::SEND, Box::new(close_frame)));
+                        
+                        // TODO: Create and on close cb to handle this situation, send the status code an the reason
                     },
-                    ConnectionStatus::CLOSED_BY_CLIENT => {}, // Nothing to do for now, we cou
-                    ConnectionStatus::CLOSED_BY_SERVER => {}  // Unreachable  
+                    ConnectionStatus::CLIENT_WANTS_TO_CLOSE => {
+                        // TODO: ?
+                        // Received a response to the client close handshake
+                        // Verify the status of close handshake
+                        self.connection_status = ConnectionStatus::CLOSE;
+                        self.stream.shutdown(Shutdown::Both)?;
+                    },
+                    ConnectionStatus::SERVER_WANTS_TO_CLOSE => {}  // Unreachable  
+                    ConnectionStatus::CLOSE => {}                  // Unreachable
                 }
                 println!("[CLIENT]: Connection close received")
             },
@@ -286,7 +349,7 @@ impl<'a> SyncClient<'a> {
     }
 }
 
-// TODO: Refactor de code
+// TODO: Refactor the code
 impl<'a> Drop for SyncClient<'a> {
     fn drop(&mut self) {
         let msg = "Done";
