@@ -2,6 +2,7 @@
 
 use super::super::core::traits::Serialize;
 use std::collections::HashMap;
+use super::commons::{Headers, END_LINE};
 
 // Returns the string value from the method
 fn method_to_string(method: &Method) -> String {
@@ -9,9 +10,6 @@ fn method_to_string(method: &Method) -> String {
         Method::GET => String::from("GET")
     }
 }
-
-const END_LINE: &str = "\r\n";
-type Headers<'a> = HashMap<&'a str, &'a str>;
 
 pub enum Method {
     GET

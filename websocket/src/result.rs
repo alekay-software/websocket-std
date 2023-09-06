@@ -53,6 +53,8 @@ pub enum WebSocketError {
 	TryFromSliceError(array::TryFromSliceError),
 	/// Custom String Error
 	ConnectionClose(String),
+	/// Error performing the initial handshake
+	HandShakeError(String),
     /// Other error from higher-level crate, for downcasting
 	Other(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
@@ -69,6 +71,7 @@ impl fmt::Display for WebSocketError {
 			WebSocketError::Utf8Error(_) => fmt.write_str("UTF-8 failure"),
 			WebSocketError::TryFromSliceError(_) => fmt.write_str("TryFromSliceError"),
 			WebSocketError::ConnectionClose(msg) => fmt.write_str(msg.as_str()),
+			WebSocketError::HandShakeError(msg) => fmt.write_str(msg.as_str()),
 			WebSocketError::Other(x) => x.fmt(fmt),
 		}
 	}

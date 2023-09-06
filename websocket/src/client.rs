@@ -8,13 +8,15 @@ use crate::ws_basic::mask;
 use crate::ws_basic::header::{Header, OPCODE, FLAG};
 use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, FrameKind, read_frame};
 use crate::ws_basic::status_code::{WSStatus, evaulate_status_code};
-use crate::core::traits::Serialize;
+use crate::core::traits::{Serialize, Parse};
 use crate::core::binary::bytes_to_u16;
 use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
+use crate::http::response::Response;
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
+const SWITCHING_PROTOCOLS: u16 = 101;
 
 #[derive(PartialEq)]
 enum EventType {
@@ -68,9 +70,9 @@ pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketRes
     // Mark the bytes read as consumed so the buffer will not return them in a subsequent read
     reader.consume(bytes_readed);
 
-    // ----------------- Need to confirm that the handshake was accepted ----------------- //
-    println!("[HANDSHAKE]: {}", buffer);
-    // ----------------------------------------------------------------------------------- //
+    // Read response and verify that the server accepted switch protocols
+    let response = Response::parse(buffer.as_bytes());
+    if response.get_status_code() == 0 || response.get_status_code() != SWITCHING_PROTOCOLS { return Err(WebSocketError::HandShakeError(String::from("Error performing the HandShake with the server"))) }
     
     // Set socket to non-blocking mode
     socket.set_nonblocking(true)?;
