@@ -1,7 +1,7 @@
 use std::net::{TcpStream, Shutdown};
 use std::io::{BufReader, BufRead, Read, Write};
 use std::collections::{HashMap, VecDeque};
-use std::time::Instant;
+use std::time::{Instant, Duration};
 use std::format;
 use crate::result::WebSocketError;
 use crate::ws_basic::mask;
@@ -15,7 +15,7 @@ use crate::http::request::{Request, Method};
 use crate::http::response::Response;
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
-const DEFAULT_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const SWITCHING_PROTOCOLS: u16 = 101;
 
 #[derive(PartialEq)]
@@ -99,8 +99,9 @@ pub struct SyncClient<'a> {
     path: &'a str,
     connection_status: ConnectionStatus,
     message_size: u64,
+    timeout: Duration,
     response_cb: Option<fn(String)>,
-    // close_cb: Option<fn(u16, String)>,                       // Close callback, receives status code an reason
+    // close_cb: Option<fn(u16, String)>,                    // Close callback, receives status code an reason
     stream: TcpStream,
     event_queue: VecDeque<(EventType, Box<dyn Frame>)>,      // Events that the event loop will execute
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket
@@ -112,7 +113,7 @@ pub struct SyncClient<'a> {
 // TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
 impl<'a> SyncClient<'a> {
     fn new(host: &'a str, port: u16, path: &'a str, stream: TcpStream) -> Self {
-        SyncClient { host, port, path, connection_status: ConnectionStatus::OPEN, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new() }
+        SyncClient { host, port, path, connection_status: ConnectionStatus::OPEN, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new(), timeout: DEFAULT_TIMEOUT }
     }
 
     // TODO: The message size does not take into account
@@ -123,6 +124,10 @@ impl<'a> SyncClient<'a> {
     // TODO: This function is only for text messages, pass to the callback information about the type of the frame
     pub fn set_response_cb(&mut self, cb: fn(String)) {
         self.response_cb = Some(cb);
+    }
+
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
     }
 
     // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
@@ -367,7 +372,7 @@ impl<'a> Drop for SyncClient<'a> {
  
         // Process a response for all the events and confirm that the connection was closed.
         while !self.event_queue.is_empty() && self.connection_status == ConnectionStatus::OPEN {
-            if timeout.elapsed().as_secs() >= DEFAULT_TIMEOUT_SECS { break } // Close handshake timeout.
+            if timeout.elapsed().as_secs() >= self.timeout.as_secs() { break } // Close handshake timeout.
             let result = self.event_loop();
             if result.is_ok() { continue }
             let err = result.err().unwrap();

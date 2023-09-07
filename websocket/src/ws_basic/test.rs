@@ -212,7 +212,7 @@ fn serialize_header_with_mask_data_greather_than_65536() {
 fn serialize_header_with_no_mask_data_equal_to_max_value() {
     let flag = FLAG::FIN;
     let opcode = OPCODE::TEXT;
-    let payload_len = 18446744073709551615; // (2ˆ64) - 1
+    let payload_len = u64::MAX; // (2ˆ64) - 1
     let header = Header::new(flag, opcode, None, payload_len);
 
     let expected_result: Vec<u8> = [0x81, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF].to_vec();
@@ -224,7 +224,7 @@ fn serialize_header_with_no_mask_data_equal_to_max_value() {
 fn serialize_header_with_mask_data_equal_to_max_value() {
     let flag = FLAG::FIN;
     let opcode = OPCODE::TEXT;
-    let payload_len = 18446744073709551615;
+    let payload_len = u64::MAX;
     let mask = gen_mask();
     let header = Header::new(flag, opcode, Some(mask), payload_len);
 

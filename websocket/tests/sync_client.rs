@@ -2,8 +2,11 @@ use std::net::{TcpListener, TcpStream};
 use websocket_std::client::sync_connect;
 use websocket_std::result::WebSocketError;
 use std::thread;
+use std::time::Duration;
 use std::io::{self, Write, Read, ErrorKind};
 use std::net::Shutdown;
+use core::array::TryFromSliceError;
+
 
 // Returns the server TcpStream
 fn setup() -> (TcpListener, u16) {
@@ -13,16 +16,16 @@ fn setup() -> (TcpListener, u16) {
     (listener, port)
 }
 
-fn read_all(stream: &mut TcpStream) -> io::Result<String> {
-    let mut data = String::new();
+fn read_all(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
+    let mut data = Vec::new();
     let mut buff: [u8; 1024] = [0; 1024];
 
     loop {
         let res = stream.read(&mut buff);
         match res {
             Ok(amount) => {
-                let d = String::from_utf8(buff[0..amount].to_vec()).unwrap();
-                data.push_str(d.as_str());
+                let d = &(buff[0..amount]);
+                data.extend_from_slice(d);
             }
             Err(e) => {
                 if e.kind() == ErrorKind::WouldBlock { break }
@@ -34,44 +37,114 @@ fn read_all(stream: &mut TcpStream) -> io::Result<String> {
     return Ok(data);
 }
 
-// This test lasts 30 seconds because the client is waiting for the handshake response
-// The client by default waits 30 seconds to receive a response before closing.
+fn mock_accept_connection(listener: TcpListener) -> TcpStream {
+    let (mut conn, _) = listener.accept().unwrap();
+    conn.set_nonblocking(true).unwrap();
+    
+    let _ = read_all(&mut conn).unwrap();
+    
+    let http_response = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n Connection: Upgrade\r\n\r\n".as_bytes();
+    conn.write_all(http_response).unwrap();
+
+    return conn;
+}
+
+fn mock_refuse_connection(listener: TcpListener, http_response: &[u8]) -> TcpStream {
+    let (mut conn, _) = listener.accept().unwrap();
+    conn.set_nonblocking(true).unwrap();
+    
+    let _ = read_all(&mut conn).unwrap();
+    conn.write_all(http_response).unwrap();
+
+    return conn;
+}
+
+fn mock_wait_for_frame(conn: &mut TcpStream) -> Vec<u8> {
+    let _data: Vec<u8> = Vec::new();
+    let mut data_res = Vec::new();
+    while _data.len() == 0 {
+        let _data = read_all(conn).unwrap();
+        data_res.extend(_data);
+    }
+    return data_res;
+}
+
+fn mock_unmask_data(data: &Vec<u8>) -> Vec<u8> {
+    let bytes = data.as_slice();
+    let mask = &bytes[2..6];
+    let masked_data = &bytes[6..bytes.len()];
+
+    let mut data = Vec::new();
+        
+    let mut i = 0;
+    for &byte in masked_data {
+        data.push(byte ^ mask[i]);
+        i += 1;
+        if i >= mask.len() { i = 0 };
+    }
+    data
+}
+
+pub fn bytes_to_u16(bytes: &[u8]) -> Result<u16, TryFromSliceError> {
+    let res: Result<[u8; 2], _> = bytes.try_into();
+    if res.is_err() { return Err(res.err().unwrap()); }
+    let buf = res.unwrap();
+    return Ok(u16::from_be_bytes(buf));
+}
+
+fn mock_unmask_control_frame(data: &Vec<u8>) -> (u16, Vec<u8>) {
+    let bytes = data.as_slice();
+    let mask = &bytes[2..6];
+    let mut masked_status = &bytes[6..8];
+    let masked_reason = &bytes[8..bytes.len()];
+
+    let mut reason: Vec<u8> = Vec::new();
+    let mut status: Vec<u8> = Vec::new();
+
+    let mut i = 0;
+    for &byte in masked_reason {
+        reason.push(byte ^ mask[i]);
+        i += 1;
+        if i >= mask.len() { i = 0 };
+    }
+
+    i = 0;
+    for &byte in masked_status {
+        status.push(byte ^ mask[i]);
+        i += 1;
+        if i >= mask.len() { i = 0 };
+    }
+
+    let status = bytes_to_u16(status.as_slice()).unwrap();
+    
+    (status, reason)
+}
+
+// -------------------- Connection and HandShake -------------------- //
+
 #[test]
 fn connection_success_no_close_handshake() {
     let (listener, port) = setup();
     
     thread::spawn(move || {
-        let (mut conn, _) = listener.accept().unwrap();
-        conn.set_nonblocking(true).unwrap();
-        
-        let _ = read_all(&mut conn).unwrap();
-        
-        // Response with switchin protocols
-        let http_response = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n Connection: Upgrade\r\n\r\n".as_bytes();
-        conn.write_all(http_response).unwrap();
+        let conn = mock_accept_connection(listener);
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
     let connection = sync_connect("localhost", port, "/");
-    assert!(connection.is_ok());
+    let mut client = connection.unwrap();
+    client.set_timeout(Duration::from_secs(1));
 }
 #[test]
 fn connection_error_no_server_running() {
-    let (listener, port) = setup();
+    let (listener, _) = setup();
     
     thread::spawn(move || {
-        let (mut conn, _) = listener.accept().unwrap();
-        conn.set_nonblocking(true).unwrap();
-        
-        let _ = read_all(&mut conn).unwrap();
-        
-        // Response with switchin protocols
-        let http_response = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n Connection: Upgrade\r\n\r\n".as_bytes();
-        conn.write_all(http_response).unwrap();
+        let conn = mock_accept_connection(listener);
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
-    let connection = sync_connect("localhost", port + 1, "/");
+    let connection = sync_connect("localhost", 0, "/");
     assert!(connection.is_err());
 }
 
@@ -80,19 +153,12 @@ fn mock_hanshake_error_unsuported_ws_version() {
     let (listener, port) = setup();
     
     thread::spawn(move || {
-        let (mut conn, _) = listener.accept().unwrap();
-        conn.set_nonblocking(true).unwrap();
-        
-        let _ = read_all(&mut conn).unwrap();
-        
-        // Response with switchin protocols
         let response = "HTTP/1.1 400 Bad Request\r\nDate: Thu, 07 Sep 2023 09:59:36 GMT\r\nServer: Python/3.9 websockets/11.0.3\r\nContent-Length: 80\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n".as_bytes();
-
-        conn.write_all(response).unwrap();
+        let conn = mock_refuse_connection(listener, response);
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
-    let connection = sync_connect("localhost", port + 1, "/");
+    let connection = sync_connect("localhost", port, "/");
     assert!(connection.is_err());
     match connection.err().unwrap() {
         WebSocketError::HandShakeError(_) => assert!(true),
@@ -105,22 +171,140 @@ fn mock_hanshake_error_invalid_header() {
     let (listener, port) = setup();
     
     thread::spawn(move || {
-        let (mut conn, _) = listener.accept().unwrap();
-        conn.set_nonblocking(true).unwrap();
-        
-        let _ = read_all(&mut conn).unwrap();
-        
-        // Response with switchin protocols
         let response = "HTTP/1.1 400 Bad Request\r\nDate: Thu, 07 Sep 2023 10:06:58 GMT\r\nServer: Python/3.9 websockets/11.0.3\r\nContent-Length: 78\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nFailed to open a WebSocket connection: invalid Sec-WebSocket-Key header: clo.\r\n\r\n".as_bytes();
-
-        conn.write_all(response).unwrap();
+        let conn = mock_refuse_connection(listener, response);
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
-    let connection = sync_connect("localhost", port + 1, "/");
+    let connection = sync_connect("localhost", port, "/");
     assert!(connection.is_err());
     match connection.err().unwrap() {
         WebSocketError::HandShakeError(_) => assert!(true),
         _ => assert!(false, "Expected HandShakeError")
     }
 }
+
+
+// -------------------- Sending data -------------------- //
+#[test]
+fn send_data_success_on_one_frame() {
+    fn callback(msg: String) {
+        assert_eq!(msg, String::from("Hello"));
+    }
+
+    let (listener, port) = setup();
+    
+    thread::spawn(move || {
+        let mut conn = mock_accept_connection(listener);
+        let data = mock_wait_for_frame(&mut conn);
+        let data = mock_unmask_data(&data);
+        
+        assert_eq!(String::from_utf8(data).unwrap(), "Hello");
+        
+        let echo_frame: Vec<u8> = [0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f].to_vec();
+
+        conn.write_all(echo_frame.as_slice()).unwrap();
+        conn.shutdown(Shutdown::Both).unwrap();
+
+    });
+
+    let connection = sync_connect("localhost", port, "/");
+    let mut client = connection.unwrap();
+    client.set_timeout(Duration::from_secs(1));
+    client.set_response_cb(callback);
+
+    client.send_message(String::from("Hello")).unwrap();
+
+    let mut i = 0;
+    while i < 2 {
+        client.event_loop().unwrap();
+        i += 1;
+    }
+
+}
+
+#[test]
+fn send_data_success_more_than_one_frame() {
+    fn callback(msg: String) {
+        assert_eq!(msg, String::from("Hello"));
+    }
+
+    let (listener, port) = setup();
+    
+    thread::spawn(move || {
+        let mut conn = mock_accept_connection(listener);
+        let mut msg = String::new();
+
+        let mut i = 0;
+        while i < 2 {
+            let data = mock_wait_for_frame(&mut conn);
+            let data = mock_unmask_data(&data);
+            msg.push_str(String::from_utf8(data).unwrap().as_str());
+            i += 1;
+        }
+        
+        assert_eq!(msg, "Hello");
+        
+        let echo_frame: Vec<u8> = [0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f].to_vec();
+
+        conn.write_all(echo_frame.as_slice()).unwrap();
+        conn.shutdown(Shutdown::Both).unwrap();
+
+    });
+
+    let connection = sync_connect("localhost", port, "/");
+    let mut client = connection.unwrap();
+    client.set_timeout(Duration::from_secs(1));
+    client.set_message_size(3);
+    client.set_response_cb(callback);
+
+    client.send_message(String::from("Hello")).unwrap();
+
+    let mut i = 0;
+    while i < 3 {
+        client.event_loop().unwrap();
+        i += 1;
+    }
+
+}
+
+#[test]
+fn connect_and_close_successfully() {
+    fn callback(msg: String) {
+        assert_eq!(msg, String::from("Hello"));
+    }
+
+    let (listener, port) = setup();
+    
+    thread::spawn(move || {
+        let mut conn = mock_accept_connection(listener);
+        let data = mock_wait_for_frame(&mut conn);
+        let data = mock_unmask_data(&data);
+        
+        assert_eq!(String::from_utf8(data).unwrap(), "Hello");
+        
+        let echo_frame: Vec<u8> = [0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f].to_vec();
+
+        conn.write_all(echo_frame.as_slice()).unwrap();
+
+        let close_frame = mock_wait_for_frame(&mut conn);
+        let (status, reason) = mock_unmask_control_frame(&close_frame);
+        
+        assert_eq!(status, 1000);
+        assert_eq!(String::from_utf8(reason).unwrap().as_str(), "Done");
+
+        conn.shutdown(Shutdown::Both).unwrap();
+
+    });
+
+    let connection = sync_connect("localhost", port, "/");
+    let mut client = connection.unwrap();
+    client.set_timeout(Duration::from_secs(1));
+    client.set_response_cb(callback);
+
+    client.send_message(String::from("Hello")).unwrap();
+    client.event_loop().unwrap();
+
+    drop(client);
+}
+
