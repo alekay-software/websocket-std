@@ -72,7 +72,7 @@ pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketRes
 
     // Read response and verify that the server accepted switch protocols
     let response = Response::parse(buffer.as_bytes());
-    if response.get_status_code() == 0 || response.get_status_code() != SWITCHING_PROTOCOLS { return Err(WebSocketError::HandShakeError(String::from("Error performing the HandShake with the server"))) }
+    if response.get_status_code() == 0 || response.get_status_code() != SWITCHING_PROTOCOLS { return Err(WebSocketError::HandShakeError(format!("HandShake Error: {}", buffer))) }
     
     // Set socket to non-blocking mode
     socket.set_nonblocking(true)?;
