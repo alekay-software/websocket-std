@@ -25,13 +25,8 @@ impl Response {
 // If an error is produced parsing the response then the status code will be -1
 impl Parse for Response {
     fn parse(bytes: &[u8]) -> Self {
-        let bytes = String::from_utf8(bytes.to_vec());
+        let bytes = String::from_utf8_lossy(bytes);
 
-        if bytes.is_err() { 
-            return Response::new(String::new(), 0, String::new(), None, None); 
-        }
-
-        let bytes = bytes.unwrap();
         let lines:Vec<&str> = bytes.split(END_LINE).collect();
 
         let response_info: Vec<&str> = lines[0].split(" ").collect();

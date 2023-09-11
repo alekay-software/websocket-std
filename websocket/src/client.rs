@@ -3,6 +3,7 @@ use std::io::{BufReader, BufRead, Read, Write};
 use std::collections::{HashMap, VecDeque};
 use std::time::{Instant, Duration};
 use std::format;
+use core::marker::Send;
 use crate::result::WebSocketError;
 use crate::ws_basic::mask;
 use crate::ws_basic::header::{Header, OPCODE, FLAG};
@@ -64,16 +65,20 @@ pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketRes
     let mut reader = BufReader::new(&socket);
 
     // Read current current data in the TcpStream
-    let mut buffer = String::new();
-    let bytes_readed = reader.fill_buf()?.read_to_string(&mut buffer)?;
+    let mut buffer: [u8; 1024] = [0; 1024];
+    let bytes_readed = reader.fill_buf()?.read(&mut buffer)?;
     
     // Mark the bytes read as consumed so the buffer will not return them in a subsequent read
     reader.consume(bytes_readed);
+    buffer[bytes_readed-1] = 0;
 
     // Read response and verify that the server accepted switch protocols
-    let response = Response::parse(buffer.as_bytes());
-    if response.get_status_code() == 0 || response.get_status_code() != SWITCHING_PROTOCOLS { return Err(WebSocketError::HandShakeError(format!("HandShake Error: {}", buffer))) }
+    let response = Response::parse(buffer.as_slice());
+    if response.get_status_code() == 0 || response.get_status_code() != SWITCHING_PROTOCOLS { return Err(WebSocketError::HandShakeError(format!("HandShake Error: {}", String::from_utf8_lossy(&buffer)))) }
     
+    println!("Response: ");
+    println!("{}", String::from_utf8_lossy(&buffer));
+
     // Set socket to non-blocking mode
     socket.set_nonblocking(true)?;
     let client = SyncClient::new(host, port, path, socket);
@@ -386,3 +391,5 @@ impl<'a> Drop for SyncClient<'a> {
         let _ = self.stream.shutdown(Shutdown::Both); // Ignore result from shutdown method.
     }
 }
+
+unsafe impl<'a> Send for SyncClient<'a> {}
