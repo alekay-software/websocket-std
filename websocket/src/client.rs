@@ -122,6 +122,10 @@ impl<'a> SyncClient<'a> {
         SyncClient { host, port, path, connection_status: ConnectionStatus::OPEN, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new(), timeout: DEFAULT_TIMEOUT }
     }
 
+    pub fn is_connected(&self) -> bool {
+        self.connection_status != ConnectionStatus::CLOSE
+    }
+
     // TODO: The message size does not take into account
     pub fn set_message_size(&mut self, size: u64) {
         self.message_size = size;
