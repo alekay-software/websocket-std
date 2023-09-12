@@ -14,7 +14,7 @@ use crate::core::binary::bytes_to_u16;
 use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use crate::http::response::Response;
-use std::thread;
+use std::ptr;
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -41,7 +41,7 @@ fn generate_key() -> String {
 }
 
 // TODO: Confirm that the handshake is accepted
-pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketResult<SyncClient<'a>> {
+pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str) -> WebSocketResult<SyncClient<'a, T>> {
     // Create a tcpstream to the host
     let mut socket = TcpStream::connect(format!("{}:{}", host, port.to_string()))?;
 
@@ -99,27 +99,28 @@ pub fn sync_connect<'a>(host: &'a str, port: u16, path: &'a str) -> WebSocketRes
 // [] TODO: Send the size of the buffer to read data from the stream, so the client will decide the perfomance base on the memory available or the size of the messages that the system is going to receive
 // Remove warning dead code for [host, port, path] fields. The Client keeps this information because could be useful in the future.
 #[allow(dead_code)]
-pub struct SyncClient<'a> {
+pub struct SyncClient<'a, T> {
     host: &'a str,
     port: u16,
     path: &'a str,
     connection_status: ConnectionStatus,
     message_size: u64,
     timeout: Duration,
-    response_cb: Option<fn(String)>,
+    response_cb: Option<unsafe fn(String, *mut T)>,
     // close_cb: Option<fn(u16, String)>,                    // Close callback, receives status code an reason
     stream: TcpStream,
     event_queue: VecDeque<(EventType, Box<dyn Frame>)>,      // Events that the event loop will execute
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket
     send_queue: VecDeque<Box<dyn Frame>>,                    // Store frames to send                                
-    recv_data: Vec<u8>                                       // Store the data received from the Frames until the data is completelly received
+    recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
+    cb_data: *mut T
 }
 
 // TODO: No se implementa la funcion de cierre de la conexion, la conexion se cierra cuando termina la vida del cliente
 // TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
-impl<'a> SyncClient<'a> {
+impl<'a, T> SyncClient<'a, T> {
     fn new(host: &'a str, port: u16, path: &'a str, stream: TcpStream) -> Self {
-        SyncClient { host, port, path, connection_status: ConnectionStatus::OPEN, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new(), timeout: DEFAULT_TIMEOUT }
+        SyncClient { host, port, path, connection_status: ConnectionStatus::OPEN, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new(), timeout: DEFAULT_TIMEOUT, cb_data:  ptr::null_mut()}
     }
 
     pub fn is_connected(&self) -> bool {
@@ -132,8 +133,9 @@ impl<'a> SyncClient<'a> {
     }
 
     // TODO: This function is only for text messages, pass to the callback information about the type of the frame
-    pub fn set_response_cb(&mut self, cb: fn(String)) {
+    pub fn set_response_cb(&mut self, cb: unsafe fn(String, *mut T), data: *mut T) {
         self.response_cb = Some(cb);
+        self.cb_data = data;
     }
 
     pub fn set_timeout(&mut self, timeout: Duration) {
@@ -244,7 +246,7 @@ impl<'a> SyncClient<'a> {
 
                         // Message received in a single frame
                         if self.recv_data.is_empty() {
-                            callback(msg);
+                            unsafe { callback(msg, self.cb_data) };
 
                         // Message from a multiples frames     
                         } else {
@@ -256,7 +258,7 @@ impl<'a> SyncClient<'a> {
                             completed_msg.push_str(msg.as_str());
 
                             // Send the message to the callback function
-                            callback(completed_msg);
+                            unsafe { callback(completed_msg, self.cb_data) };
                             
                             // There is 2 ways to deal with the vector data:
                             // 1 - Remove from memory (takes more time)
@@ -353,7 +355,7 @@ impl<'a> SyncClient<'a> {
 }
 
 // TODO: Refactor the code
-impl<'a> Drop for SyncClient<'a> {
+impl<'a, T> Drop for SyncClient<'a, T> {
     fn drop(&mut self) {
         let msg = "Done";
         let mask = Some(mask::gen_mask());
@@ -383,4 +385,4 @@ impl<'a> Drop for SyncClient<'a> {
     }
 }
 
-unsafe impl<'a> Send for SyncClient<'a> {}
+unsafe impl<'a, T> Send for SyncClient<'a, T> {}

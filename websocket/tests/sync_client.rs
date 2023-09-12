@@ -269,7 +269,7 @@ fn send_data_success_more_than_one_frame() {
 }
 
 #[test]
-fn connect_and_close_successfully() {
+fn connect_send_message_and_client_close_successfully() {
     fn callback(msg: String) {
         assert_eq!(msg, String::from("Hello"));
     }
@@ -303,8 +303,18 @@ fn connect_and_close_successfully() {
     client.set_response_cb(callback);
 
     client.send_message(String::from("Hello")).unwrap();
+    assert!(client.is_connected());
     client.event_loop().unwrap();
+    assert!(client.is_connected());
 
     drop(client);
 }
 
+// Test no cb set for response
+
+// Test connection closed close frame not received
+#[test]
+fn server_close_connection_and_no_close_frame_received() {
+    
+}
+// Test connection closed by the server
