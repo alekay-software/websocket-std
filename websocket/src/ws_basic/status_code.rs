@@ -1,12 +1,8 @@
 use bitflags::bitflags;
 
-use crate::result::WebSocketResult;
-
-use super::frame::FrameKind;
-
 bitflags! {
     #[allow(non_camel_case_types)]
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, Clone, Copy)]
     pub struct WSStatus: u16 {
         const NORMAL_CLOSURE = 1000;            // Close the connection, no error
         const GOING_AWAY = 1001;                // Close the connection, no error

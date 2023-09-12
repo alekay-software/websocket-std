@@ -14,6 +14,7 @@ use crate::core::binary::bytes_to_u16;
 use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use crate::http::response::Response;
+use std::thread;
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -273,7 +274,9 @@ impl<'a> SyncClient<'a> {
                 self.connection_status = ConnectionStatus::CLIENT_WANTS_TO_CLOSE;
             } else if frame.kind() == FrameKind::Control && frame.get_header().get_opcode() == OPCODE::CLOSE && self.connection_status == ConnectionStatus::SERVER_WANTS_TO_CLOSE {
                 self.connection_status = ConnectionStatus::CLOSE;
+                println!("[CLIENT]: Sending response to close frame, status code ")       
             }
+
             self.stream.write_all(frame.serialize().as_slice())?;
 
             if self.connection_status == ConnectionStatus::CLOSE { 
@@ -302,43 +305,27 @@ impl<'a> SyncClient<'a> {
                 let status_code = &frame.get_data()[0..2];
                 let res = bytes_to_u16(status_code);
 
-                // Server sent and invalid status code, close the connection
-                // TODO: The client should clean the event_queue and close the connection in the next interation?
-                if res.is_err() { 
-                    let reason = "Error decoding status code";
-                    let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), (reason.len() + 2) as u64);
-                    let close_frame = ControlFrame::new(header, Some(WSStatus::PROTOCOL_ERROR.bits()), reason.as_bytes().to_vec());
-                    self.event_queue.clear();
-                    self.event_queue.push_front((EventType::SEND, Box::new(close_frame)));
-                    return Ok(())
-                }   
-                
-                let status_code = res.unwrap();
+                let status_code = if res.is_ok() { res.unwrap() } else { WSStatus::EXPECTED_STATUS_CODE.bits() };
 
                 match self.connection_status {
                     // Server wants to close the connection
                     ConnectionStatus::OPEN => {
                         println!("Server wants to close the connection");
                         let status_code = WSStatus::from_bits(status_code);
+
+                        let reason = frame.get_data();
+                        let mut status_code = if status_code.is_some() { status_code.unwrap() } else { WSStatus::PROTOCOL_ERROR };
                         
-                        // TODO: ¿Close the connection and clean the entire queue?
-                        if status_code.is_none() {
-                            let reason = "Unkwon status code";
-                            let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), (reason.len() + 2) as u64);
-                            let close_frame = ControlFrame::new(header, Some(WSStatus::PROTOCOL_ERROR.bits()), reason.as_bytes().to_vec());
-                            self.event_queue.clear();
-                            self.event_queue.push_front((EventType::SEND, Box::new(close_frame)));
-                            return Ok(())
-                        }
-                        
-                        let status_code = status_code.unwrap();
                         let (error, _) = evaulate_status_code(status_code);
+                        if error { status_code = WSStatus::PROTOCOL_ERROR }
 
                         // Enqueue close frame to response to the server
-                        let payload: &[u8] = frame.get_data(); // Respond with the same reason and status code
-                        let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), payload.len() as u64);
-                        let close_frame = ControlFrame::new(header, None, payload.to_vec());
+                        let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), (reason.len() + 2) as u64);
+                        let close_frame = ControlFrame::new(header, Some(status_code.bits()), reason.to_vec());
                         self.event_queue.push_front((EventType::SEND, Box::new(close_frame)));
+
+                        println!("[RECEIVED STATUS]: {}", status_code.bits());
+                        self.connection_status = ConnectionStatus::SERVER_WANTS_TO_CLOSE;
                         
                         // TODO: Create and on close cb to handle this situation, send the status code an the reason
                     },
