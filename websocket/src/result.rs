@@ -25,7 +25,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 use std::str::Utf8Error;
-use std::fmt::{self, Write};
+use std::fmt;
 use std::convert::From;
 use std::error::Error;
 use std::io;

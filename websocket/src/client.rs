@@ -1,5 +1,5 @@
 use std::net::{TcpStream, Shutdown};
-use std::io::{BufReader, BufRead, Read, Write};
+use std::io::{BufReader, BufRead, Read, Write, ErrorKind};
 use std::collections::{HashMap, VecDeque};
 use std::time::{Instant, Duration};
 use std::format;
@@ -283,13 +283,29 @@ impl<'a, T> SyncClient<'a, T> {
                 println!("[CLIENT]: Sending response to close frame, status code ")       
             }
 
-            self.stream.write_all(frame.serialize().as_slice())?;
+            self.try_write(frame)?;
 
             if self.connection_status == ConnectionStatus::CLOSE { 
                 self.stream.shutdown(Shutdown::Both)?;
             }
         }
         
+        Ok(())
+    }
+
+    fn try_write(&mut self, frame: Box<dyn Frame>) -> WebSocketResult<()> {
+        let res = self.stream.write_all(frame.serialize().as_slice());
+        if res.is_err(){
+            let error = res.err().unwrap();
+
+            // Try to send next iteration
+            if error.kind() == ErrorKind::WouldBlock { 
+                self.event_queue.push_front((EventType::SEND, frame))
+
+            } else {
+                return Err(WebSocketError::IOError(error));
+            }
+        }
         Ok(())
     }
 
@@ -303,8 +319,7 @@ impl<'a, T> SyncClient<'a, T> {
                 let header = Header::new(FLAG::FIN, OPCODE::PONG, mask, data.len() as u64);
                 let pong_frame = ControlFrame::new(header, None, data.to_vec());
                 println!("[CLIENT]: Sending pong");
-                self.stream.write_all(pong_frame.serialize().as_slice())?;
-
+                self.try_write(Box::new(pong_frame))?;
             },
             OPCODE::PONG => { todo!("Not implemented handle PONG") },
             OPCODE::CLOSE => {
