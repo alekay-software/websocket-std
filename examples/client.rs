@@ -1,7 +1,7 @@
 use websocket_std::result::WebSocketResult;
 use websocket_std::client::{sync_connect, SyncClient};
 use std::time::{Instant, Duration};
-use std::thread;
+use std::thread::{self, sleep};
 use std::ptr;
 
 struct Data {
@@ -10,11 +10,7 @@ struct Data {
 }
 
 unsafe fn on_message(msg: String, data: *mut Data) {
-    println!("Hello");
     (*data).count += 1;
-    println!("[CLIENT 1]: {}", msg);
-    println!("[CLIENT]: Message count: {}", (*data).count);
-    println!("Bye");
 }
 
 fn main() -> WebSocketResult<()> {
@@ -32,24 +28,21 @@ fn main() -> WebSocketResult<()> {
     println!("Connected to VAM Scoreboard");
 
     client.set_response_cb(on_message, data);
-
     client.set_message_size(1024);
-
-    client.send_message(String::from("Hello world"))?;
 
     let start = Instant::now();
   
     loop {
+        if start.elapsed().as_secs() >= 3 { break }            
+        client.send_message("Hello world")?;
+
         if !client.is_connected() { 
             println!("Disconnected");
             break 
         }
         client.event_loop()?;
-        thread::sleep(Duration::from_secs(1));
-        client.send_message(String::from("Hello world"))?;
-        if start.elapsed().as_secs() >= 20 { break }            
     }
     
-    println!("Terminanting main");
+    println!("Messages sent: {}", unsafe { (*data).count} );
     Ok(())
 }
