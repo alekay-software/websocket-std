@@ -1,9 +1,6 @@
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use websocket_std::client::{sync_connect, SyncClient};
-use std::time::{Instant, Duration};
-use std::thread;
-use std::ptr;
+use websocket_std::result::WebSocketResult;
 
 struct Data {
     count: usize,
@@ -35,16 +32,14 @@ fn main() -> WebSocketResult<()> {
 
     let start = Instant::now();
 
-    let mut i = 1;
     loop {
         if !client.is_connected() { 
             println!("Disconnected");
             break;
         }
         client.event_loop()?;
-        thread::sleep(Duration::from_secs(1));
         client.send_message("Hello world")?;
-        if start.elapsed().as_secs() >= 20 { break }            
+        if start.elapsed().as_secs() >= 3 { break }            
     }
     
     println!("Terminanting main");

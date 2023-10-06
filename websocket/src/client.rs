@@ -148,10 +148,6 @@ impl<'a, T> SyncClient<'a, T> {
         self.timeout = timeout;
     }
 
-    pub fn event_len(&self) -> usize {
-        self.event_queue.len()
-    }
-
     // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
     pub fn send_message(&mut self, payload: &str) -> WebSocketResult<()> {
         // Connection was closed
@@ -281,9 +277,8 @@ impl<'a, T> SyncClient<'a, T> {
                 FrameKind::Control => { return self.handle_control_frame(frame.as_any().downcast_ref::<ControlFrame>().unwrap()); },
                 FrameKind::NotDefine => return Err(WebSocketError::ProtocolError(String::from("OPCODE not supported")))
             };
-        // EventType == SEND    
         } 
-
+        
         if send_frame.is_some() {
             let frame = send_frame.unwrap();
             if frame.kind() == FrameKind::Control && frame.get_header().get_opcode() == OPCODE::CLOSE && self.connection_status == ConnectionStatus::OPEN { 
