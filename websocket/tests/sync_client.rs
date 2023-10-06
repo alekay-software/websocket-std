@@ -1,11 +1,12 @@
 use std::net::{TcpListener, TcpStream};
-use websocket_std::client::sync_connect;
-use websocket_std::result::WebSocketError;
+use websocket_std::client::{sync_connect, SyncClient};
+use websocket_std::result::{WebSocketError, WebSocketResult};
 use std::thread;
 use std::time::Duration;
 use std::io::{self, Write, Read, ErrorKind};
 use std::net::Shutdown;
 use core::array::TryFromSliceError;
+use std::ptr;
 
 
 // Returns the server TcpStream
@@ -95,7 +96,7 @@ pub fn bytes_to_u16(bytes: &[u8]) -> Result<u16, TryFromSliceError> {
 fn mock_unmask_control_frame(data: &Vec<u8>) -> (u16, Vec<u8>) {
     let bytes = data.as_slice();
     let mask = &bytes[2..6];
-    let mut masked_status = &bytes[6..8];
+    let masked_status = &bytes[6..8];
     let masked_reason = &bytes[8..bytes.len()];
 
     let mut reason: Vec<u8> = Vec::new();
@@ -132,7 +133,7 @@ fn connection_success_no_close_handshake() {
     });
 
     let connection = sync_connect("localhost", port, "/");
-    let mut client = connection.unwrap();
+    let mut client: SyncClient<'static, u32> = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
 }
 #[test]
@@ -144,7 +145,7 @@ fn connection_error_no_server_running() {
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
-    let connection = sync_connect("localhost", 0, "/");
+    let connection: WebSocketResult<SyncClient<'static, u32>> = sync_connect("localhost", 0, "/");
     assert!(connection.is_err());
 }
 
@@ -158,7 +159,7 @@ fn mock_hanshake_error_unsuported_ws_version() {
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
-    let connection = sync_connect("localhost", port, "/");
+    let connection: WebSocketResult<SyncClient<'static, u32>> = sync_connect("localhost", port, "/");
     assert!(connection.is_err());
     match connection.err().unwrap() {
         WebSocketError::HandShakeError(_) => assert!(true),
@@ -176,7 +177,7 @@ fn mock_hanshake_error_invalid_header() {
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
-    let connection = sync_connect("localhost", port, "/");
+    let connection: WebSocketResult<SyncClient<'static, u32>> = sync_connect("localhost", port, "/");
     assert!(connection.is_err());
     match connection.err().unwrap() {
         WebSocketError::HandShakeError(_) => assert!(true),
@@ -188,7 +189,7 @@ fn mock_hanshake_error_invalid_header() {
 // -------------------- Sending data -------------------- //
 #[test]
 fn send_data_success_on_one_frame() {
-    fn callback(msg: String) {
+    fn callback(msg: String, _data: *mut u32) {
         assert_eq!(msg, String::from("Hello"));
     }
 
@@ -211,9 +212,9 @@ fn send_data_success_on_one_frame() {
     let connection = sync_connect("localhost", port, "/");
     let mut client = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
-    client.set_response_cb(callback);
+    client.set_response_cb(callback, ptr::null_mut());
 
-    client.send_message(String::from("Hello")).unwrap();
+    client.send_message("Hello").unwrap();
 
     let mut i = 0;
     while i < 2 {
@@ -225,7 +226,7 @@ fn send_data_success_on_one_frame() {
 
 #[test]
 fn send_data_success_more_than_one_frame() {
-    fn callback(msg: String) {
+    fn callback(msg: String, _data: *mut u32) {
         assert_eq!(msg, String::from("Hello"));
     }
 
@@ -256,9 +257,9 @@ fn send_data_success_more_than_one_frame() {
     let mut client = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
     client.set_message_size(3);
-    client.set_response_cb(callback);
+    client.set_response_cb(callback, ptr::null_mut());
 
-    client.send_message(String::from("Hello")).unwrap();
+    client.send_message("Hello").unwrap();
 
     let mut i = 0;
     while i < 3 {
@@ -270,7 +271,7 @@ fn send_data_success_more_than_one_frame() {
 
 #[test]
 fn connect_send_message_and_client_close_successfully() {
-    fn callback(msg: String) {
+    fn callback(msg: String, _data: *mut u32) {
         assert_eq!(msg, String::from("Hello"));
     }
 
@@ -300,9 +301,9 @@ fn connect_send_message_and_client_close_successfully() {
     let connection = sync_connect("localhost", port, "/");
     let mut client = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
-    client.set_response_cb(callback);
+    client.set_response_cb(callback, ptr::null_mut());
 
-    client.send_message(String::from("Hello")).unwrap();
+    client.send_message("Hello").unwrap();
     assert!(client.is_connected());
     client.event_loop().unwrap();
     assert!(client.is_connected());

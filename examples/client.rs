@@ -1,7 +1,9 @@
 use std::thread;
 use std::time::{Duration, Instant};
 use websocket_std::client::{sync_connect, SyncClient};
-use websocket_std::result::WebSocketResult;
+use std::time::{Instant, Duration};
+use std::thread;
+use std::ptr;
 
 struct Data {
     count: usize,
@@ -29,24 +31,22 @@ fn main() -> WebSocketResult<()> {
     println!("Connected to VAM Scoreboard");
 
     client.set_response_cb(on_message, data);
-
     client.set_message_size(1024);
 
     let start = Instant::now();
 
     let mut i = 1;
     loop {
-        client.send_message("Hello world")?;
-        if !client.is_connected() {
+        if !client.is_connected() { 
             println!("Disconnected");
             break;
         }
         client.event_loop()?;
-        if start.elapsed().as_secs() >= 3 { break }
-
-        i += 1;
+        thread::sleep(Duration::from_secs(1));
+        client.send_message("Hello world")?;
+        if start.elapsed().as_secs() >= 20 { break }            
     }
-
-    println!("Messages sent: {}", unsafe { (*data).count } );
+    
+    println!("Terminanting main");
     Ok(())
 }

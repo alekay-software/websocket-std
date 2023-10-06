@@ -20,12 +20,6 @@ const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const SWITCHING_PROTOCOLS: u16 = 101;
 
-#[derive(PartialEq)]
-enum EventType {
-    SEND,
-    RECEIVED
-}
-
 #[allow(non_camel_case_types)]
 #[derive(PartialEq)]
 enum ConnectionStatus { 
@@ -107,11 +101,10 @@ pub struct SyncClient<'a, T> {
     message_size: u64,
     timeout: Duration,
     response_cb: Option<unsafe fn(String, *mut T)>,
-    // close_cb: Option<fn(u16, String)>,                    // Close callback, receives status code an reason
+    recv_frame_queue: VecDeque<Box<dyn Frame>>,              // Frames received queue
+    send_frame_queue: VecDeque<Box<dyn Frame>>,              // Frames to send queue                               
     stream: TcpStream,
-    event_queue: VecDeque<(EventType, Box<dyn Frame>)>,      // Events that the event loop will execute
-    recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket
-    send_queue: VecDeque<Box<dyn Frame>>,                    // Store frames to send                                
+    recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket (bytes that didn't use to create a frame)
     recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
     cb_data: *mut T
 }
@@ -120,7 +113,20 @@ pub struct SyncClient<'a, T> {
 // TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
 impl<'a, T> SyncClient<'a, T> {
     fn new(host: &'a str, port: u16, path: &'a str, stream: TcpStream) -> Self {
-        SyncClient { host, port, path, connection_status: ConnectionStatus::OPEN, message_size: DEFAULT_MESSAGE_SIZE, response_cb: None, stream, event_queue: VecDeque::new(), recv_storage: Vec::new(), send_queue: VecDeque::new(), recv_data: Vec::new(), timeout: DEFAULT_TIMEOUT, cb_data:  ptr::null_mut()}
+        SyncClient { 
+            host, 
+            port, 
+            path, 
+            connection_status: ConnectionStatus::OPEN, 
+            message_size: DEFAULT_MESSAGE_SIZE, 
+            response_cb: None, 
+            stream, 
+            recv_frame_queue: VecDeque::new(), 
+            send_frame_queue: VecDeque::new(), 
+            recv_storage: Vec::new(), 
+            recv_data: Vec::new(), 
+            timeout: DEFAULT_TIMEOUT, 
+            cb_data:  ptr::null_mut()}
     }
 
     pub fn is_connected(&self) -> bool {
@@ -163,7 +169,7 @@ impl<'a, T> SyncClient<'a, T> {
         if payload.len() as u64 <= self.message_size {
             let header = Header::new(FLAG::FIN, OPCODE::TEXT, Some(mask::gen_mask()), payload.len() as u64);
             let dataframe = DataFrame::new(header, payload.as_bytes().to_vec());
-            self.event_queue.push_back((EventType::SEND, Box::new(dataframe)));
+            self.send_frame_queue.push_back(Box::new(dataframe));
     
         // Split into frames and send 
         } else {
@@ -179,10 +185,10 @@ impl<'a, T> SyncClient<'a, T> {
 
                 // Put the first frame of the split into the event_queue
                 if data_sent <= 0 {
-                    self.event_queue.push_back((EventType::SEND, Box::new(frame)))
+                    self.send_frame_queue.push_back(Box::new(frame));
                 // The rest of the frames goes to the send_queue
                 } else {
-                    self.send_queue.push_back(Box::new(frame));
+                    self.send_frame_queue.push_back(Box::new(frame));
                 }
                 data_sent += self.message_size as usize;
             }
@@ -219,21 +225,18 @@ impl<'a, T> SyncClient<'a, T> {
             frame = res.unwrap();
         }
 
-        if frame.is_some() { self.event_queue.push_back((EventType::RECEIVED, frame.unwrap())); }
+        if frame.is_some() { self.recv_frame_queue.push_back(frame.unwrap()); }
 
-        // Insert more frames from the send queue
-        let frame = self.send_queue.pop_front();
-        if frame.is_some() { self.event_queue.push_back((EventType::SEND, frame.unwrap())); }
 
-        // Take one frame from the eve  nt loop queue
-        let res = self.event_queue.pop_front();
-        if res.is_none() { return Ok(()) }  // No events to handle
+        // Take one frame to send
+        let send_frame = self.send_frame_queue.pop_front();
 
-        // Frame to handle
-        let (event_type, frame) = res.unwrap();
+        // Take one received frame
+        let recv_frame = self.recv_frame_queue.pop_front();
 
         // If the client close the connection the received frames 
-        if event_type == EventType::RECEIVED {
+        if recv_frame.is_some() {
+            let frame = recv_frame.unwrap();
             match frame.kind()  {
                 FrameKind::Data => { 
                     if frame.get_header().get_flag() != FLAG::FIN {
@@ -279,7 +282,10 @@ impl<'a, T> SyncClient<'a, T> {
                 FrameKind::NotDefine => return Err(WebSocketError::ProtocolError(String::from("OPCODE not supported")))
             };
         // EventType == SEND    
-        } else {
+        } 
+
+        if send_frame.is_some() {
+            let frame = send_frame.unwrap();
             if frame.kind() == FrameKind::Control && frame.get_header().get_opcode() == OPCODE::CLOSE && self.connection_status == ConnectionStatus::OPEN { 
                 self.connection_status = ConnectionStatus::CLIENT_WANTS_TO_CLOSE;
             } else if frame.kind() == FrameKind::Control && frame.get_header().get_opcode() == OPCODE::CLOSE && self.connection_status == ConnectionStatus::SERVER_WANTS_TO_CLOSE {
@@ -304,7 +310,7 @@ impl<'a, T> SyncClient<'a, T> {
 
             // Try to send next iteration
             if error.kind() == ErrorKind::WouldBlock { 
-                self.event_queue.push_front((EventType::SEND, frame))
+                self.send_frame_queue.push_front(frame);
 
             } else {
                 return Err(WebSocketError::IOError(error));
@@ -347,7 +353,7 @@ impl<'a, T> SyncClient<'a, T> {
                         // Enqueue close frame to response to the server
                         let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), (reason.len() + 2) as u64);
                         let close_frame = ControlFrame::new(header, Some(status_code.bits()), reason.to_vec());
-                        self.event_queue.push_front((EventType::SEND, Box::new(close_frame)));
+                        self.send_frame_queue.push_front(Box::new(close_frame));
 
                         println!("[RECEIVED STATUS]: {}", status_code.bits());
                         self.connection_status = ConnectionStatus::SERVER_WANTS_TO_CLOSE;
@@ -383,12 +389,14 @@ impl<'a, T> Drop for SyncClient<'a, T> {
         let close_frame = ControlFrame::new(header, Some(status_code), msg.as_bytes().to_vec());
 
         // Add close frame at the end of the queue.
-        self.event_queue.push_back((EventType::SEND, Box::new(close_frame)));
+        self.send_frame_queue.clear();
+        self.recv_frame_queue.clear();
+        self.send_frame_queue.push_back(Box::new(close_frame));
 
         let timeout = Instant::now();
  
         // Process a response for all the events and confirm that the connection was closed.
-        while !self.event_queue.is_empty() && self.connection_status == ConnectionStatus::OPEN {
+        while self.connection_status != ConnectionStatus::CLOSE {
             if timeout.elapsed().as_secs() >= self.timeout.as_secs() { break } // Close handshake timeout.
             let result = self.event_loop();
             if result.is_ok() { continue }
