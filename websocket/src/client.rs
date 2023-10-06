@@ -142,8 +142,12 @@ impl<'a, T> SyncClient<'a, T> {
         self.timeout = timeout;
     }
 
+    pub fn event_len(&self) -> usize {
+        self.event_queue.len()
+    }
+
     // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
-    pub fn send_message(&mut self, payload: String) -> WebSocketResult<()> {
+    pub fn send_message(&mut self, payload: &str) -> WebSocketResult<()> {
         // Connection was closed
         if self.connection_status != ConnectionStatus::OPEN { 
             let msg = match self.connection_status {

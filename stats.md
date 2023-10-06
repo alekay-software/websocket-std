@@ -1,3 +1,34 @@
+# Stats
+
+## Websocket Server (Python)
+Echo server
+```python
+#!/usr/bin/env python
+import asyncio
+from websockets.server import serve
+
+HOST = "localhost"
+PORT = 3000
+
+async def echo(websocket):
+    async for message in websocket:
+        await websocket.send(message)
+
+async def main():
+    async with serve(echo, HOST, PORT):
+        await asyncio.Future()  # run forever
+
+asyncio.run(main())
+```
+
+### Rust websocket-std client
+
+3 seconds sending and reading messages: 
+- Mac M1: Messages received --> 75949 (server and client in the same machine)
+- ESP32 Rust: Messages received --> 1598 - 1186 - 880
+- ESP32 Arduino C++: Messages received --> 859
+
+```rust
 use std::thread;
 use std::time::{Duration, Instant};
 use websocket_std::client::{sync_connect, SyncClient};
@@ -12,7 +43,7 @@ unsafe fn on_message(msg: String, data: *mut Data) {
 }
 
 fn main() -> WebSocketResult<()> {
-    let host: &'static str = "192.168.1.141"; // Make static lifetime, &str lives for the entire lifetime of the running program.
+    let host: &'static str = "localhost"; // Make static lifetime, &str lives for the entire lifetime of the running program.
     let port: u16 = 3000;
     let path: &'static str = "/";
     let data_box = Box::new(Data { count: 0 });
@@ -34,19 +65,20 @@ fn main() -> WebSocketResult<()> {
 
     let start = Instant::now();
 
-    let mut i = 1;
     loop {
-        client.send_message("Hello world")?;
+        client.send_message(String::from("Hello world"))?;
         if !client.is_connected() {
             println!("Disconnected");
             break;
         }
         client.event_loop()?;
         if start.elapsed().as_secs() >= 3 { break }
-
-        i += 1;
     }
 
-    println!("Messages sent: {}", unsafe { (*data).count } );
+    println!("Messages sent: {}", unsafe { (*data).count} );
     Ok(())
 }
+
+```
+
+### Rust websocket-std client Mac M1
