@@ -100,7 +100,7 @@ pub struct SyncClient<'a, T> {
     connection_status: ConnectionStatus,
     message_size: u64,
     timeout: Duration,
-    response_cb: Option<unsafe fn(String, *mut T)>,
+    response_cb: Option<unsafe fn(&mut Self, String, *mut T)>,
     recv_frame_queue: VecDeque<Box<dyn Frame>>,              // Frames received queue
     send_frame_queue: VecDeque<Box<dyn Frame>>,              // Frames to send queue                               
     stream: TcpStream,
@@ -139,7 +139,7 @@ impl<'a, T> SyncClient<'a, T> {
     }
 
     // TODO: This function is only for text messages, pass to the callback information about the type of the frame
-    pub fn set_response_cb(&mut self, cb: unsafe fn(String, *mut T), data: *mut T) {
+    pub fn set_response_cb(&mut self, cb: unsafe fn(&mut Self, String, *mut T), data: *mut T) {
         self.response_cb = Some(cb);
         self.cb_data = data;
     }
@@ -249,7 +249,7 @@ impl<'a, T> SyncClient<'a, T> {
 
                         // Message received in a single frame
                         if self.recv_data.is_empty() {
-                            unsafe { callback(msg, self.cb_data) };
+                            unsafe { callback(self, msg, self.cb_data) };
 
                         // Message from a multiples frames     
                         } else {
@@ -261,7 +261,7 @@ impl<'a, T> SyncClient<'a, T> {
                             completed_msg.push_str(msg.as_str());
 
                             // Send the message to the callback function
-                            unsafe { callback(completed_msg, self.cb_data) };
+                            unsafe { callback(self, completed_msg, self.cb_data) };
                             
                             // There is 2 ways to deal with the vector data:
                             // 1 - Remove from memory (takes more time)
