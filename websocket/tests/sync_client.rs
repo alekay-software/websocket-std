@@ -189,7 +189,7 @@ fn mock_hanshake_error_invalid_header() {
 // -------------------- Sending data -------------------- //
 #[test]
 fn send_data_success_on_one_frame() {
-    fn callback(msg: String, _data: *mut u32) {
+    fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: *mut u32) {
         assert_eq!(msg, String::from("Hello"));
     }
 
@@ -226,7 +226,7 @@ fn send_data_success_on_one_frame() {
 
 #[test]
 fn send_data_success_more_than_one_frame() {
-    fn callback(msg: String, _data: *mut u32) {
+    fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: *mut u32) {
         assert_eq!(msg, String::from("Hello"));
     }
 
@@ -271,7 +271,7 @@ fn send_data_success_more_than_one_frame() {
 
 #[test]
 fn connect_send_message_and_client_close_successfully() {
-    fn callback(msg: String, _data: *mut u32) {
+    fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: *mut u32) {
         assert_eq!(msg, String::from("Hello"));
     }
 
