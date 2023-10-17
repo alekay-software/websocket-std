@@ -1,7 +1,6 @@
 use std::time::Instant;
 use websocket_std::client::{sync_connect, SyncClient};
 use websocket_std::result::WebSocketResult;
-use std::sync::Arc;
 
 struct Data {
     count: usize,
@@ -14,13 +13,14 @@ struct Data {
 type WebSocket<'a> = SyncClient<'a, Data>;
 
 unsafe fn on_message(ws: &mut WebSocket, msg: String, data: *mut Data) {
-    (*data).count += 1;
-    (*data).msg = msg;
-    let res = ws.send_message("Hello world");
+    // (*data).count += 1;
+    // (*data).msg = msg;
+    // let res = ws.send_message("Hello world");
+    println!("{}", msg);
 }
 
 fn main() -> WebSocketResult<()> {
-    let host: &str = "192.168.1.141"; // Make static lifetime, &str lives for the entire lifetime of the running program.
+    let host: &str = "129.151.233.192"; // Make static lifetime, &str lives for the entire lifetime of the running program.
     let port: u16 = 3000;
     let path: &str = "/";
     let data = Data { count: 0, msg: String::new() };
@@ -50,8 +50,8 @@ fn main() -> WebSocketResult<()> {
             break;
         }
         client.event_loop()?;
-        client.send_message("Hello world")?;
-        if start.elapsed().as_secs() >= 3 { break }            
+        // client.send_message("Hello world")?;
+        // if start.elapsed().as_secs() >= 120 { break }            
     }
     
     println!("Terminanting main");
