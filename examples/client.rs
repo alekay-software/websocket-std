@@ -20,7 +20,7 @@ unsafe fn on_message(ws: &mut WebSocket, msg: String, data: *mut Data) {
 }
 
 fn main() -> WebSocketResult<()> {
-    let host: &str = "192.168.1.141"; // Make static lifetime, &str lives for the entire lifetime of the running program.
+    let host: &str = "localhost"; // Make static lifetime, &str lives for the entire lifetime of the running program.
     let port: u16 = 3000;
     let path: &str = "/";
     let data = Data { count: 0, msg: String::new() };
@@ -51,9 +51,10 @@ fn main() -> WebSocketResult<()> {
         }
         client.event_loop()?;
         client.send_message("Hello world")?;
-        if start.elapsed().as_secs() >= 3 { break }            
+        if start.elapsed().as_secs() >= 15 { break }            
     }
     
-    println!("Terminanting main");
+    println!("Finishing connection");
+    println!("Messages sent: {}", unsafe { (*data).count });
     Ok(())
 }

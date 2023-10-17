@@ -319,3 +319,5 @@ fn server_close_connection_and_no_close_frame_received() {
     
 }
 // Test connection closed by the server
+
+// Test Control frames can be interjected in the middle of a fragmented message.

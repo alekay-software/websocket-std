@@ -1,4 +1,5 @@
 .vscode
+.vscode/settings.json
 target/
 .DS_Store
 *.profraw

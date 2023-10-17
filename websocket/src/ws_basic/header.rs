@@ -1,7 +1,5 @@
 use super::mask::Mask;
 use super::super::core::traits::Serialize;
-use super::super::result::{WebSocketResult, WebSocketError};
-use super::super::core::binary::{bytes_to_u16, bytes_to_u64};
 
 use bitflags::bitflags;
 
