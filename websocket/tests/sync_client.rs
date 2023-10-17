@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::io::{self, Write, Read, ErrorKind};
 use std::net::Shutdown;
 use core::array::TryFromSliceError;
-use std::ptr;
+use std::sync::Arc;
 
 
 // Returns the server TcpStream
@@ -189,7 +189,7 @@ fn mock_hanshake_error_invalid_header() {
 // -------------------- Sending data -------------------- //
 #[test]
 fn send_data_success_on_one_frame() {
-    fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: *mut u32) {
+    fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: Option<Arc<u32>>) {
         assert_eq!(msg, String::from("Hello"));
     }
 
@@ -212,7 +212,7 @@ fn send_data_success_on_one_frame() {
     let connection = sync_connect("localhost", port, "/");
     let mut client = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
-    client.set_response_cb(callback, ptr::null_mut());
+    client.set_response_cb(callback, None);
 
     client.send_message("Hello").unwrap();
 
@@ -226,7 +226,7 @@ fn send_data_success_on_one_frame() {
 
 #[test]
 fn send_data_success_more_than_one_frame() {
-    fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: *mut u32) {
+    fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: Option<Arc<u32>>) {
         assert_eq!(msg, String::from("Hello"));
     }
 
@@ -257,7 +257,7 @@ fn send_data_success_more_than_one_frame() {
     let mut client = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
     client.set_message_size(3);
-    client.set_response_cb(callback, ptr::null_mut());
+    client.set_response_cb(callback, None);
 
     client.send_message("Hello").unwrap();
 
@@ -271,7 +271,7 @@ fn send_data_success_more_than_one_frame() {
 
 #[test]
 fn connect_send_message_and_client_close_successfully() {
-    fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: *mut u32) {
+    fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: Option<Arc<u32>>) {
         assert_eq!(msg, String::from("Hello"));
     }
 
@@ -301,7 +301,7 @@ fn connect_send_message_and_client_close_successfully() {
     let connection = sync_connect("localhost", port, "/");
     let mut client = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
-    client.set_response_cb(callback, ptr::null_mut());
+    client.set_response_cb(callback, None);
 
     client.send_message("Hello").unwrap();
     assert!(client.is_connected());

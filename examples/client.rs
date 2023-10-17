@@ -1,4 +1,3 @@
-use std::panic::UnwindSafe;
 use std::time::Instant;
 use websocket_std::client::{sync_connect, SyncClient};
 use websocket_std::result::WebSocketResult;
