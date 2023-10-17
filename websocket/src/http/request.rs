@@ -31,10 +31,6 @@ impl<'a> Request<'a> {
         
         Request { method, path, version, headers: h }
     }
-
-    pub fn set_header(&mut self, key: &'a str, value: &'a str) {
-        self.headers.insert(key, value);
-    }
 }
 
 impl<'a> Serialize for Request<'a> {

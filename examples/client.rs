@@ -19,7 +19,7 @@ fn on_message(ws: &mut WebSocket, _msg: String, data: Option<WSData>) {
 }
 
 fn main() -> WebSocketResult<()> {
-    let host: &str = "localhost"; // Make static lifetime, &str lives for the entire lifetime of the running program.
+    let host: &str = "localhost";
     let port: u16 = 3000;
     let path: &str = "/";
     let data: WSData = Arc::new(RefCell::new(Data { count: 0 }));
@@ -42,7 +42,7 @@ fn main() -> WebSocketResult<()> {
     let start = Instant::now();
     while c1.is_connected() {        
         c1.event_loop()?;
-        if start.elapsed().as_secs() >= 60 { break }            
+        if start.elapsed().as_secs() >= 40 { break }            
     }
     
     println!("Finishing connection");

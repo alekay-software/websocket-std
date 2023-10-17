@@ -4,8 +4,8 @@ use std::collections::{HashMap, VecDeque};
 use std::time::{Instant, Duration};
 use std::format;
 use core::marker::Send;
+use rand::Rng;
 use crate::result::WebSocketError;
-use crate::ws_basic::mask;
 use crate::ws_basic::header::{OPCODE, FLAG};
 use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, FrameKind, read_frame};
 use crate::ws_basic::status_code::{WSStatus, evaulate_status_code};
@@ -15,8 +15,7 @@ use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use crate::http::response::Response;
 use std::sync::Arc;
-
-use core::str::from_utf8;
+use crate::ws_basic::key::gen_ws_key;
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -31,17 +30,12 @@ enum ConnectionStatus {
     CLOSE
 }
 
-// TODO: Generate a random string key and store into the client
-fn generate_key() -> String {
-    return String::from("dGhlIHNhbXBsZSBub25jZQ==");
-}
-
 // TODO: Confirm that the handshake is accepted
 pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str) -> WebSocketResult<SyncClient<'a, T>> {
     // Create a tcpstream to the host
     let mut socket = TcpStream::connect(format!("{}:{}", host, port.to_string()))?;
 
-    let key = generate_key();
+    let key = gen_ws_key();
 
     let headers = HashMap::from([
         ("Upgrade", "websocket"),
@@ -339,8 +333,6 @@ impl<'a, T> SyncClient<'a, T> {
                         if error { status_code = WSStatus::PROTOCOL_ERROR }
 
                         // Enqueue close frame to response to the server
-                        println!("Status code: {}", status_code.bits());
-                        println!("Reason: {}", from_utf8(reason).unwrap());
                         let close_frame = ControlFrame::new(FLAG::FIN, OPCODE::CLOSE, Some(status_code.bits()), reason.to_vec(), true, None);
                         self.send_frame_queue.push_front(Box::new(close_frame));
 
@@ -372,11 +364,11 @@ impl<'a, T> SyncClient<'a, T> {
 impl<'a, T> Drop for SyncClient<'a, T> {
     fn drop(&mut self) {
         let msg = "Done";
-        let mask = Some(mask::gen_mask());
         let status_code: u16 = 1000;
         let close_frame = ControlFrame::new(FLAG::FIN, OPCODE::CLOSE, Some(status_code), msg.as_bytes().to_vec(), true, None);
 
         // Add close frame at the end of the queue.
+        // Clear both queues
         self.send_frame_queue.clear();
         self.recv_frame_queue.clear();
         self.send_frame_queue.push_back(Box::new(close_frame));
