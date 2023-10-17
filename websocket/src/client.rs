@@ -172,12 +172,12 @@ impl<'a, T> SyncClient<'a, T> {
         }
 
         let mut data_sent = 0;
-        let mut i = 0;
+        let mut _i: usize = 0;
 
         while data_sent < payload.len() {
-            i = data_sent + self.message_size as usize; 
-            if i >= payload.len() { i = payload.len() };
-            let payload_chunk = payload[data_sent..i].as_bytes();
+            _i = data_sent + self.message_size as usize; 
+            if _i >= payload.len() { _i = payload.len() };
+            let payload_chunk = payload[data_sent.._i].as_bytes();
             let flag = if data_sent + self.message_size as usize >= payload.len() { FLAG::FIN } else { FLAG::NOFLAG };
             let code = if data_sent == 0 { OPCODE::TEXT } else { OPCODE::CONTINUATION };
             let frame = DataFrame::new(flag, code, payload_chunk.to_vec(), true, None);
@@ -312,12 +312,9 @@ impl<'a, T> SyncClient<'a, T> {
     fn handle_control_frame(&mut self, frame: &ControlFrame) -> WebSocketResult<()> {
         match frame.get_header().get_opcode() {
             OPCODE::PING=> { 
-                // Create a PONG frame. Set masked App data if the PING frame contains any App data
-                // println!("[CLIENT]: PING received data -> {}", String::from_utf8(frame.get_data().to_vec()).unwrap());
                 let data = frame.get_data();
-                let mask = if data.len() > 0 { Some(mask::gen_mask()) } else { None };
                 let pong_frame = ControlFrame::new(FLAG::FIN, OPCODE::PONG, None, data.to_vec(), true, None);
-                println!("[CLIENT]: Sending pong");
+                println!("[CLIENT]: Sending pong, data[{}]", data.len());
                 self.try_write(Box::new(pong_frame))?;
             },
             OPCODE::PONG => { todo!("Not implemented handle PONG") },
