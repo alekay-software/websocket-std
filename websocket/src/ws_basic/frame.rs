@@ -1,6 +1,6 @@
 use std::any::Any;
 use crate::result::{WebSocketResult, WebSocketError};
-use super::{header::{Header, FLAG, OPCODE}, mask::Mask};
+use super::{header::{Header, FLAG, OPCODE}, mask::{Mask, gen_mask}};
 use super::super::core::traits::Serialize;
 use super::super::core::binary::{bytes_to_u16, bytes_to_u64};
 use std::io::Read;
@@ -55,6 +55,18 @@ pub trait Frame {
     }
 }
 
+fn get_mask(mask_frame: bool, mask: Option<Mask>) -> Option<Mask> {
+    let mut _mask: Option<Mask> = None;
+        
+    if let Some(m) = mask {
+        _mask = Some(m);
+    } else if mask_frame {
+        _mask = Some(gen_mask());
+    }
+
+    return _mask;
+}
+
 // Dataframe struct
 pub struct DataFrame {
     header: Header,
@@ -62,7 +74,8 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
-    pub fn new(header: Header, data: Vec<u8>) -> Self {
+    pub fn new(flag: FLAG, opcode: OPCODE, data: Vec<u8>, mask_frame: bool, mask: Option<Mask>) -> Self {
+        let header: Header = Header::new(flag, opcode, get_mask(mask_frame, mask), data.len() as u64);
         DataFrame { header, data }
     }
 }
@@ -88,9 +101,21 @@ pub struct ControlFrame {
 }
 
 impl ControlFrame {
-    pub fn new(header: Header, status_code: Option<u16>, data: Vec<u8>) -> Self {
-        // Data len should be less than 123 (2-bytes of status code + data <= 125) Where I shold veritfy this condition?
-        let mut merge_data = vec![];
+    // Payload should be <= 125 bytes
+    pub fn new(flag: FLAG, opcode: OPCODE, status_code: Option<u16>, data: Vec<u8>, mask_frame: bool, mask: Option<Mask>) -> Self {
+        let status_len = if status_code.is_some() { 2 } else { 0 };
+        let mut payload_len = data.len() + status_len;
+
+        let mut data = data;
+
+        if data.len() + status_len > 125 {
+            payload_len = 125;
+            data = data[0..124-status_len].to_vec();
+        }
+
+        let header = Header::new(flag, opcode, get_mask(mask_frame, mask), payload_len as u64);
+
+        let mut merge_data = Vec::new();
         if status_code.is_some() {
             merge_data.extend(status_code.unwrap().to_be_bytes());
         }
@@ -130,6 +155,7 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
         msg.push_str(bytes[0].to_string().as_str());
         return Err(WebSocketError::ProtocolError(msg));
     }
+
     
     // code
     let code = OPCODE::from_bits(bytes[0] & 0b000011111);
@@ -138,13 +164,13 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
         msg.push_str(bytes[1].to_string().as_str());
         return Err(WebSocketError::ProtocolError(msg));
     }
-
+    
     let is_masked = (0b10000000 & bytes[1]) == 1;
-
+    
     // Payload length
     let mut payload_len: u64 = 0b01111111 as u64 & bytes[1] as u64;
     let mut i = 2; // Index to know the start point of the mask if exists
-
+    
     if payload_len == 126 {
         i = 4;
         payload_len = bytes_to_u16(&bytes[2..4]).unwrap() as u64;
@@ -152,11 +178,11 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
         i = 10;
         payload_len = bytes_to_u64(&bytes[2..10]).unwrap();
     }
-
+    
     // bytes not received completelly due to buffers from the OS
     if payload_len + i as u64 > bytes.len() as u64 { return Ok(None) }
     // if payload_len + i as u64 > bytes.len() as u64 { return Err(WebSocketError::Custom(String::from("Frame is not completelly readed"))); }
-
+    
     // Mask Key
     let mut mask: Option<Mask> = None;
     if is_masked {
@@ -167,23 +193,22 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
         mask = Some(buf);
         i += 4;
     }
-
+    
+    let flag = flag.unwrap();
     let code = code.unwrap();
-    let code_bits = code.bits();
-    let header = Header::new(flag.unwrap(), code, mask, payload_len); 
 
     let offset = i + payload_len as usize;
 
     // Dataframe
-    if code_bits == OPCODE::TEXT.bits() || code_bits == OPCODE::BINARY.bits() || code_bits == OPCODE::CONTINUATION.bits() {
+    if code == OPCODE::TEXT || code == OPCODE::BINARY || code == OPCODE::CONTINUATION {
         let data = &bytes[i..payload_len as usize +i];
-        return Ok(Some((Box::new(DataFrame::new(header, data.to_vec())), offset)));
+        return Ok(Some((Box::new(DataFrame::new(flag, code, data.to_vec(), false, mask)), offset)));
 
     // ControlFrame
     } else {
         let status_code = bytes_to_u16(&bytes[i..i+2]).unwrap();
         let data = &bytes[i+2..payload_len as usize + 2];
-        return Ok(Some((Box::new(ControlFrame::new(header, Some(status_code), data.to_vec())), offset)));
+        return Ok(Some((Box::new(ControlFrame::new(flag, code, Some(status_code), data.to_vec(), false, mask)), offset)));
     }
 
     // if bytes.len() == 0 { break } // Al frames readed

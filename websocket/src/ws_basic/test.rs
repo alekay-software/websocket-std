@@ -1,5 +1,3 @@
-use std::io::Read;
-
 use crate::core::traits::Serialize;
 use super::header::*;
 use super::mask::gen_mask;
@@ -258,14 +256,14 @@ fn serialize_data_masked() {
     let flag = FLAG::FIN;
     let opcode = OPCODE::TEXT;
     let data = String::from("hello");
-    let mask = gen_mask();
-    let header = Header::new(flag, opcode, Some(mask), data.len() as u64);
 
-    let dataframe = DataFrame::new(header, data.as_bytes().to_vec());
+    let dataframe = DataFrame::new(flag, opcode, data.as_bytes().to_vec(), true, None);
+    let mask = dataframe.get_header().get_mask().unwrap();
     let serialized_frame = dataframe.serialize();
     let serialized_data = serialized_frame[serialized_frame.len() - data.len()..serialized_frame.len()].to_vec();
     let _d = apply_mask(serialized_data.as_slice(), &mask);
     let _d = String::from_utf8(_d).unwrap();
+
 
     let expected_data = apply_mask(data.as_bytes(), &mask);
     let mut expected_frame = Vec::new();
@@ -283,9 +281,9 @@ fn serialize_data_unmasked() {
     let flag = FLAG::FIN;
     let opcode = OPCODE::TEXT;
     let data = String::from("hello");
-    let header = Header::new(flag, opcode, None, data.len() as u64);
 
-    let dataframe = DataFrame::new(header, data.as_bytes().to_vec());
+    let dataframe = DataFrame::new(flag, opcode, data.as_bytes().to_vec(), false, None);
+
     let serialized_frame = dataframe.serialize();
     let serialized_data = serialized_frame[serialized_frame.len() - data.len()..serialized_frame.len()].to_vec();
 
@@ -305,9 +303,8 @@ fn serialize_controlframe_unmasked_without_status_code() {
     let flag = FLAG::FIN;
     let opcode = OPCODE::PING;
     let data = String::from("hello");
-    let header = Header::new(flag, opcode, None, data.len() as u64);
 
-    let dataframe = ControlFrame::new(header, None, data.as_bytes().to_vec());
+    let dataframe = ControlFrame::new(flag, opcode, None, data.as_bytes().to_vec(), false, None);
     let serialized_frame = dataframe.serialize();
     let serialized_data = serialized_frame[serialized_frame.len() - data.len()..serialized_frame.len()].to_vec();
 
@@ -325,9 +322,8 @@ fn serialize_controlframe_unmasked_with_status_code() {
     let opcode = OPCODE::PING;
     let data = String::from("hello");
     let status_code = 1000;
-    let header = Header::new(flag, opcode, None, (data.len() + 2) as u64);
 
-    let dataframe = ControlFrame::new(header, Some(status_code), data.as_bytes().to_vec());
+    let dataframe = ControlFrame::new(flag, opcode, Some(status_code), data.as_bytes().to_vec(), false, None);
     let serialized_frame = dataframe.serialize();
     let serialized_data = serialized_frame[serialized_frame.len() - data.len()..serialized_frame.len()].to_vec();
 
@@ -346,9 +342,8 @@ fn serialize_controlframe_masked_without_status_code() {
     let opcode = OPCODE::PONG;
     let data = String::from("hello");
     let mask = gen_mask();
-    let header = Header::new(flag, opcode, Some(mask), data.len() as u64);
 
-    let dataframe = ControlFrame::new(header, None, data.as_bytes().to_vec());
+    let dataframe = ControlFrame::new(flag, opcode, None, data.as_bytes().to_vec(), false, Some(mask));
     let serialized_frame = dataframe.serialize();
     let serialized_data = serialized_frame[serialized_frame.len() - data.len()..serialized_frame.len()].to_vec();
     let _d = apply_mask(serialized_data.as_slice(), &mask);
@@ -372,9 +367,8 @@ fn serialize_controlframe_masked_with_status_code() {
     let data = String::from("hello");
     let mask = gen_mask();
     let status_code = 1000;
-    let header = Header::new(flag, opcode, Some(mask), (data.len() + 2) as u64);
 
-    let dataframe = ControlFrame::new(header, Some(status_code), data.as_bytes().to_vec());
+    let dataframe = ControlFrame::new(flag, opcode, Some(status_code), data.as_bytes().to_vec(), false, Some(mask));
     let serialized_frame = dataframe.serialize();
     let serialized_data = serialized_frame[serialized_frame.len() - data.len() - 2..serialized_frame.len()].to_vec();
 

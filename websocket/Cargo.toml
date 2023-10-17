@@ -18,3 +18,4 @@ keywords = ["http", "async", "api"]
 [dependencies]
 bitflags = "2.3.2"
 rand = "0.8.5"
+base64 = "0.10.1"

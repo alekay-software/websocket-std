@@ -40,9 +40,9 @@ pub enum WebSocketError {
 	/// A WebSocket protocol error
 	ProtocolError(String),
 	/// Invalid WebSocket data frame error
-	DataFrameError(&'static str),
+	DataFrameError(String),
 	// Socket error
-	SocketError(&'static str),
+	SocketError(String),
 	/// No data available
 	NoDataAvailable,
 	// IO Error
@@ -65,7 +65,7 @@ impl fmt::Display for WebSocketError {
 		match self {
 			WebSocketError::ProtocolError(msg) => fmt.write_str(msg.as_str()),
 			WebSocketError::DataFrameError(_) => fmt.write_str("WebSocket data frame error"),
-			WebSocketError::SocketError(msg) => fmt.write_str(msg),
+			WebSocketError::SocketError(msg) => fmt.write_str(msg.as_str()),
 			WebSocketError::NoDataAvailable => fmt.write_str("No data available"),
 			WebSocketError::IOError(_) => fmt.write_str("I/O failure"),
 			WebSocketError::Utf8Error(_) => fmt.write_str("UTF-8 failure"),

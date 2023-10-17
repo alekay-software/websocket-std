@@ -4,9 +4,9 @@ use std::collections::{HashMap, VecDeque};
 use std::time::{Instant, Duration};
 use std::format;
 use core::marker::Send;
+use rand::Rng;
 use crate::result::WebSocketError;
-use crate::ws_basic::mask;
-use crate::ws_basic::header::{Header, OPCODE, FLAG};
+use crate::ws_basic::header::{OPCODE, FLAG};
 use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, FrameKind, read_frame};
 use crate::ws_basic::status_code::{WSStatus, evaulate_status_code};
 use crate::core::traits::{Serialize, Parse};
@@ -14,7 +14,8 @@ use crate::core::binary::bytes_to_u16;
 use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use crate::http::response::Response;
-use std::ptr;
+use std::sync::Arc;
+use crate::ws_basic::key::gen_ws_key;
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -29,17 +30,12 @@ enum ConnectionStatus {
     CLOSE
 }
 
-// TODO: Generate a random string key and store into the client
-fn generate_key() -> String {
-    return String::from("dGhlIHNhbXBsZSBub25jZQ==");
-}
-
 // TODO: Confirm that the handshake is accepted
 pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str) -> WebSocketResult<SyncClient<'a, T>> {
     // Create a tcpstream to the host
     let mut socket = TcpStream::connect(format!("{}:{}", host, port.to_string()))?;
 
-    let key = generate_key();
+    let key = gen_ws_key();
 
     let headers = HashMap::from([
         ("Upgrade", "websocket"),
@@ -76,6 +72,7 @@ pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str) -> WebSocket
 
     // Set socket to non-blocking mode
     socket.set_nonblocking(true)?;
+    
     let client = SyncClient::new(host, port, path, socket);
 
     Ok(client)
@@ -100,14 +97,15 @@ pub struct SyncClient<'a, T> {
     connection_status: ConnectionStatus,
     message_size: u64,
     timeout: Duration,
-    response_cb: Option<unsafe fn(&mut Self, String, *mut T)>,
+    response_cb: Option<fn(&mut Self, String, Option<Arc<T>>)>,
     recv_frame_queue: VecDeque<Box<dyn Frame>>,              // Frames received queue
     send_frame_queue: VecDeque<Box<dyn Frame>>,              // Frames to send queue                               
     stream: TcpStream,
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket (bytes that didn't use to create a frame)
     recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
-    cb_data: *mut T
-}
+    cb_data: Option<Arc<T>>,
+    close_iters: usize                                       // Count the number of times send_message tries to execute after the close. If <= 1 don't raise error, otherwise raise ConnectionClose error 
+}                                                            // The close connection depends on the order of the functions event_loop and is_connected
 
 // TODO: No se implementa la funcion de cierre de la conexion, la conexion se cierra cuando termina la vida del cliente
 // TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
@@ -126,7 +124,9 @@ impl<'a, T> SyncClient<'a, T> {
             recv_storage: Vec::new(), 
             recv_data: Vec::new(), 
             timeout: DEFAULT_TIMEOUT, 
-            cb_data:  ptr::null_mut()}
+            cb_data: None,
+            close_iters: 0
+        }
     }
 
     pub fn is_connected(&self) -> bool {
@@ -139,7 +139,7 @@ impl<'a, T> SyncClient<'a, T> {
     }
 
     // TODO: This function is only for text messages, pass to the callback information about the type of the frame
-    pub fn set_response_cb(&mut self, cb: unsafe fn(&mut Self, String, *mut T), data: *mut T) {
+    pub fn set_response_cb(&mut self, cb: fn(&mut Self, String, Option<Arc<T>>), data: Option<Arc<T>>) {
         self.response_cb = Some(cb);
         self.cb_data = data;
     }
@@ -151,43 +151,32 @@ impl<'a, T> SyncClient<'a, T> {
     // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
     pub fn send_message(&mut self, payload: &str) -> WebSocketResult<()> {
         // Connection was closed
-        if self.connection_status != ConnectionStatus::OPEN { 
-            let msg = match self.connection_status {
-                ConnectionStatus::CLIENT_WANTS_TO_CLOSE => String::from("Client started close handshake"),
-                ConnectionStatus::SERVER_WANTS_TO_CLOSE => String::from("Server started close handshake"),
-                ConnectionStatus::OPEN => String::from(""),
-                ConnectionStatus::CLOSE => String::from("Connection was terminated")
-            };
-            return Err(WebSocketError::ConnectionClose(msg)) // The connection was closed, no more data can be send
-        } 
-
-        // Send single message
-        if payload.len() as u64 <= self.message_size {
-            let header = Header::new(FLAG::FIN, OPCODE::TEXT, Some(mask::gen_mask()), payload.len() as u64);
-            let dataframe = DataFrame::new(header, payload.as_bytes().to_vec());
-            self.send_frame_queue.push_back(Box::new(dataframe));
-    
-        // Split into frames and send 
-        } else {
-            let mut data_sent = 0;
-            while data_sent < payload.len() {
-                let mut i = data_sent + self.message_size as usize; 
-                if i >= payload.len() { i = payload.len() };
-                let payload_chunk = payload[data_sent..i].as_bytes();
-                let flag = if data_sent + self.message_size as usize >= payload.len() { FLAG::FIN } else { FLAG::NOFLAG };
-                let code = if data_sent == 0 { OPCODE::TEXT } else { OPCODE::CONTINUATION };
-                let header = Header::new(flag, code, Some(mask::gen_mask()), payload_chunk.len() as u64);
-                let frame = DataFrame::new(header, payload_chunk.to_vec());
-
-                // Put the first frame of the split into the event_queue
-                if data_sent <= 0 {
-                    self.send_frame_queue.push_back(Box::new(frame));
-                // The rest of the frames goes to the send_queue
-                } else {
-                    self.send_frame_queue.push_back(Box::new(frame));
+        if self.connection_status == ConnectionStatus::CLOSE {
+            self.close_iters += 1;
+            match self.connection_status {
+                ConnectionStatus::CLOSE => {
+                    if self.close_iters > 1 {
+                        return Err(WebSocketError::ConnectionClose(String::from("Connection closed")));
+                    } else {
+                        return Ok(());
+                    }
                 }
-                data_sent += self.message_size as usize;
-            }
+                _ => return Ok(())
+            };
+        }
+
+        let mut data_sent = 0;
+        let mut _i: usize = 0;
+
+        while data_sent < payload.len() {
+            _i = data_sent + self.message_size as usize; 
+            if _i >= payload.len() { _i = payload.len() };
+            let payload_chunk = payload[data_sent.._i].as_bytes();
+            let flag = if data_sent + self.message_size as usize >= payload.len() { FLAG::FIN } else { FLAG::NOFLAG };
+            let code = if data_sent == 0 { OPCODE::TEXT } else { OPCODE::CONTINUATION };
+            let frame = DataFrame::new(flag, code, payload_chunk.to_vec(), true, None);
+            self.send_frame_queue.push_back(Box::new(frame));
+            data_sent += self.message_size as usize;
         }
 
         Ok(())
@@ -249,7 +238,7 @@ impl<'a, T> SyncClient<'a, T> {
 
                         // Message received in a single frame
                         if self.recv_data.is_empty() {
-                            unsafe { callback(self, msg, self.cb_data) };
+                            callback(self, msg, self.cb_data.clone());
 
                         // Message from a multiples frames     
                         } else {
@@ -261,7 +250,7 @@ impl<'a, T> SyncClient<'a, T> {
                             completed_msg.push_str(msg.as_str());
 
                             // Send the message to the callback function
-                            unsafe { callback(self, completed_msg, self.cb_data) };
+                            callback(self, completed_msg, self.cb_data.clone());
                             
                             // There is 2 ways to deal with the vector data:
                             // 1 - Remove from memory (takes more time)
@@ -317,18 +306,15 @@ impl<'a, T> SyncClient<'a, T> {
     fn handle_control_frame(&mut self, frame: &ControlFrame) -> WebSocketResult<()> {
         match frame.get_header().get_opcode() {
             OPCODE::PING=> { 
-                // Create a PONG frame. Set masked App data if the PING frame contains any App data
-                // println!("[CLIENT]: PING received data -> {}", String::from_utf8(frame.get_data().to_vec()).unwrap());
                 let data = frame.get_data();
-                let mask = if data.len() > 0 { Some(mask::gen_mask()) } else { None };
-                let header = Header::new(FLAG::FIN, OPCODE::PONG, mask, data.len() as u64);
-                let pong_frame = ControlFrame::new(header, None, data.to_vec());
-                println!("[CLIENT]: Sending pong");
+                let pong_frame = ControlFrame::new(FLAG::FIN, OPCODE::PONG, None, data.to_vec(), true, None);
+                println!("[CLIENT]: Sending pong, data[{}]", data.len());
                 self.try_write(Box::new(pong_frame))?;
             },
             OPCODE::PONG => { todo!("Not implemented handle PONG") },
             OPCODE::CLOSE => {
-                let status_code = &frame.get_data()[0..2];
+                let data = frame.get_data();
+                let status_code = &data[0..2];
                 let res = bytes_to_u16(status_code);
 
                 let status_code = if res.is_ok() { res.unwrap() } else { WSStatus::EXPECTED_STATUS_CODE.bits() };
@@ -339,15 +325,15 @@ impl<'a, T> SyncClient<'a, T> {
                         println!("Server wants to close the connection");
                         let status_code = WSStatus::from_bits(status_code);
 
-                        let reason = frame.get_data();
+
+                        let reason = &data[2..data.len()];
                         let mut status_code = if status_code.is_some() { status_code.unwrap() } else { WSStatus::PROTOCOL_ERROR };
                         
                         let (error, _) = evaulate_status_code(status_code);
                         if error { status_code = WSStatus::PROTOCOL_ERROR }
 
                         // Enqueue close frame to response to the server
-                        let header = Header::new(FLAG::FIN, OPCODE::CLOSE, Some(mask::gen_mask()), (reason.len() + 2) as u64);
-                        let close_frame = ControlFrame::new(header, Some(status_code.bits()), reason.to_vec());
+                        let close_frame = ControlFrame::new(FLAG::FIN, OPCODE::CLOSE, Some(status_code.bits()), reason.to_vec(), true, None);
                         self.send_frame_queue.push_front(Box::new(close_frame));
 
                         println!("[RECEIVED STATUS]: {}", status_code.bits());
@@ -378,12 +364,11 @@ impl<'a, T> SyncClient<'a, T> {
 impl<'a, T> Drop for SyncClient<'a, T> {
     fn drop(&mut self) {
         let msg = "Done";
-        let mask = Some(mask::gen_mask());
-        let header = Header::new(FLAG::FIN, OPCODE::CLOSE, mask, msg.len() as u64 + 2);
         let status_code: u16 = 1000;
-        let close_frame = ControlFrame::new(header, Some(status_code), msg.as_bytes().to_vec());
+        let close_frame = ControlFrame::new(FLAG::FIN, OPCODE::CLOSE, Some(status_code), msg.as_bytes().to_vec(), true, None);
 
         // Add close frame at the end of the queue.
+        // Clear both queues
         self.send_frame_queue.clear();
         self.recv_frame_queue.clear();
         self.send_frame_queue.push_back(Box::new(close_frame));
