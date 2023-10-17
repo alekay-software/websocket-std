@@ -16,6 +16,8 @@ use crate::http::request::{Request, Method};
 use crate::http::response::Response;
 use std::ptr;
 
+use core::str::from_utf8;
+
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const SWITCHING_PROTOCOLS: u16 = 101;
@@ -107,8 +109,9 @@ pub struct SyncClient<'a, T> {
     stream: TcpStream,
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket (bytes that didn't use to create a frame)
     recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
-    cb_data: *mut T
-}
+    cb_data: *mut T,
+    close_iters: usize                                       // Count the number of times send_message tries to execute after the close. If <= 1 don't raise error, otherwise raise ConnectionClose error 
+}                                                            // The close connection depends on the order of the functions event_loop and is_connected
 
 // TODO: No se implementa la funcion de cierre de la conexion, la conexion se cierra cuando termina la vida del cliente
 // TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
@@ -127,7 +130,9 @@ impl<'a, T> SyncClient<'a, T> {
             recv_storage: Vec::new(), 
             recv_data: Vec::new(), 
             timeout: DEFAULT_TIMEOUT, 
-            cb_data:  ptr::null_mut()}
+            cb_data: ptr::null_mut(),
+            close_iters: 0
+        }
     }
 
     pub fn is_connected(&self) -> bool {
@@ -153,13 +158,17 @@ impl<'a, T> SyncClient<'a, T> {
     pub fn send_message(&mut self, payload: &str) -> WebSocketResult<()> {
         // Connection was closed
         if self.connection_status == ConnectionStatus::CLOSE {
-            let msg = match self.connection_status {
-                ConnectionStatus::CLIENT_WANTS_TO_CLOSE => String::from("Client started close handshake"),
-                ConnectionStatus::SERVER_WANTS_TO_CLOSE => String::from("Server started close handshake"),
-                ConnectionStatus::OPEN => String::from(""),
-                ConnectionStatus::CLOSE => String::from("Connection was terminated")
+            self.close_iters += 1;
+            match self.connection_status {
+                ConnectionStatus::CLOSE => {
+                    if self.close_iters > 1 {
+                        return Err(WebSocketError::ConnectionClose(String::from("Connection closed")));
+                    } else {
+                        return Ok(());
+                    }
+                }
+                _ => return Ok(())
             };
-            return Err(WebSocketError::ConnectionClose(msg))
         }
 
         let mut data_sent = 0;
@@ -313,7 +322,8 @@ impl<'a, T> SyncClient<'a, T> {
             },
             OPCODE::PONG => { todo!("Not implemented handle PONG") },
             OPCODE::CLOSE => {
-                let status_code = &frame.get_data()[0..2];
+                let data = frame.get_data();
+                let status_code = &data[0..2];
                 let res = bytes_to_u16(status_code);
 
                 let status_code = if res.is_ok() { res.unwrap() } else { WSStatus::EXPECTED_STATUS_CODE.bits() };
@@ -324,13 +334,16 @@ impl<'a, T> SyncClient<'a, T> {
                         println!("Server wants to close the connection");
                         let status_code = WSStatus::from_bits(status_code);
 
-                        let reason = frame.get_data();
+
+                        let reason = &data[2..data.len()];
                         let mut status_code = if status_code.is_some() { status_code.unwrap() } else { WSStatus::PROTOCOL_ERROR };
                         
                         let (error, _) = evaulate_status_code(status_code);
                         if error { status_code = WSStatus::PROTOCOL_ERROR }
 
                         // Enqueue close frame to response to the server
+                        println!("Status code: {}", status_code.bits());
+                        println!("Reason: {}", from_utf8(reason).unwrap());
                         let close_frame = ControlFrame::new(FLAG::FIN, OPCODE::CLOSE, Some(status_code.bits()), reason.to_vec(), true, None);
                         self.send_frame_queue.push_front(Box::new(close_frame));
 
