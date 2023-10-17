@@ -14,7 +14,7 @@ use crate::core::binary::bytes_to_u16;
 use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use crate::http::response::Response;
-use std::ptr;
+use std::sync::Arc;
 
 use core::str::from_utf8;
 
@@ -103,13 +103,13 @@ pub struct SyncClient<'a, T> {
     connection_status: ConnectionStatus,
     message_size: u64,
     timeout: Duration,
-    response_cb: Option<unsafe fn(&mut Self, String, *mut T)>,
+    response_cb: Option<fn(&mut Self, String, Option<Arc<T>>)>,
     recv_frame_queue: VecDeque<Box<dyn Frame>>,              // Frames received queue
     send_frame_queue: VecDeque<Box<dyn Frame>>,              // Frames to send queue                               
     stream: TcpStream,
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket (bytes that didn't use to create a frame)
     recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
-    cb_data: *mut T,
+    cb_data: Option<Arc<T>>,
     close_iters: usize                                       // Count the number of times send_message tries to execute after the close. If <= 1 don't raise error, otherwise raise ConnectionClose error 
 }                                                            // The close connection depends on the order of the functions event_loop and is_connected
 
@@ -130,7 +130,7 @@ impl<'a, T> SyncClient<'a, T> {
             recv_storage: Vec::new(), 
             recv_data: Vec::new(), 
             timeout: DEFAULT_TIMEOUT, 
-            cb_data: ptr::null_mut(),
+            cb_data: None,
             close_iters: 0
         }
     }
@@ -145,7 +145,7 @@ impl<'a, T> SyncClient<'a, T> {
     }
 
     // TODO: This function is only for text messages, pass to the callback information about the type of the frame
-    pub fn set_response_cb(&mut self, cb: unsafe fn(&mut Self, String, *mut T), data: *mut T) {
+    pub fn set_response_cb(&mut self, cb: fn(&mut Self, String, Option<Arc<T>>), data: Option<Arc<T>>) {
         self.response_cb = Some(cb);
         self.cb_data = data;
     }
@@ -244,7 +244,7 @@ impl<'a, T> SyncClient<'a, T> {
 
                         // Message received in a single frame
                         if self.recv_data.is_empty() {
-                            unsafe { callback(self, msg, self.cb_data) };
+                            callback(self, msg, self.cb_data.clone());
 
                         // Message from a multiples frames     
                         } else {
@@ -256,7 +256,7 @@ impl<'a, T> SyncClient<'a, T> {
                             completed_msg.push_str(msg.as_str());
 
                             // Send the message to the callback function
-                            unsafe { callback(self, completed_msg, self.cb_data) };
+                            callback(self, completed_msg, self.cb_data.clone());
                             
                             // There is 2 ways to deal with the vector data:
                             // 1 - Remove from memory (takes more time)
