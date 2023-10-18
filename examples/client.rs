@@ -1,3 +1,4 @@
+use std::io::BufRead;
 use std::time::Instant;
 use websocket_std::client::{sync_connect, SyncClient};
 use websocket_std::result::WebSocketResult;
@@ -40,9 +41,9 @@ fn main() -> WebSocketResult<()> {
 
     c1.send_message("Hello world")?;
     let start = Instant::now();
-    while c1.is_connected() {        
+    while c1.is_connected() {
         c1.event_loop()?;
-        if start.elapsed().as_secs() >= 40 { break }            
+        if start.elapsed().as_secs() >= 40 { break }
     }
     
     println!("Finishing connection");

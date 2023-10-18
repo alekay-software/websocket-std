@@ -51,29 +51,29 @@ pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str) -> WebSocket
     // Ensure that all data was sent
     socket.flush()?;
 
-    let mut reader = BufReader::new(&socket);
-
-    // Read current current data in the TcpStream
-    let mut buffer: [u8; 1024] = [0; 1024];
-    let bytes_readed = reader.fill_buf()?.read(&mut buffer)?;
-    
-    // Mark the bytes read as consumed so the buffer will not return them in a subsequent read
-    reader.consume(bytes_readed);
-    buffer[bytes_readed-1] = 0;
+    // // TODO: Create a function to ensure that the entire http response was readed before try to parse it
+    // // For the moment 512 bytes is enought to deal with connections
+    let mut buffer = [0u8; 512];
+    socket.read(&mut buffer)?;
 
     // Read response and verify that the server accepted switch protocols
-    let response = Response::parse(buffer.as_slice());
+    let response = Response::parse(&buffer);
+    if response.is_err() { return Err(WebSocketError::HandShakeError(String::from("Error parsing response from server"))); }
     
+    let response = response.unwrap();
+    response.print();
+    let sec_websocket_accept = response.header("Sec-WebSocket-Accept");
+
+    if sec_websocket_accept.is_none() { return Err(WebSocketError::HandShakeError(String::from("No Sec-WebSocket-Accept received from server"))) }
+    let sec_websocket_accept = sec_websocket_accept.unwrap();
+
     // Verify Sec-WebSocket-Accept
-    let accepted = verify_key(&sec_websocket_key, sec_websocket_accept);
+    let accepted = verify_key(&sec_websocket_key, &sec_websocket_accept);
     if !accepted {
         return Err(WebSocketError::HandShakeError(String::from("Invalid 'Sec-WebSocket-Accept'")));
     }
 
     if response.get_status_code() == 0 || response.get_status_code() != SWITCHING_PROTOCOLS { return Err(WebSocketError::HandShakeError(format!("HandShake Error: {}", String::from_utf8_lossy(&buffer)))) }
-    
-    println!("Response: ");
-    println!("{}", String::from_utf8_lossy(&buffer));
 
     // Set socket to non-blocking mode
     socket.set_nonblocking(true)?;
