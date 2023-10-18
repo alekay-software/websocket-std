@@ -4,7 +4,6 @@ use std::collections::{HashMap, VecDeque};
 use std::time::{Instant, Duration};
 use std::format;
 use core::marker::Send;
-use rand::Rng;
 use crate::result::WebSocketError;
 use crate::ws_basic::header::{OPCODE, FLAG};
 use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, FrameKind, read_frame};
@@ -15,7 +14,7 @@ use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use crate::http::response::Response;
 use std::sync::Arc;
-use crate::ws_basic::key::gen_ws_key;
+use crate::ws_basic::key::{gen_key, verify_key};
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -32,15 +31,14 @@ enum ConnectionStatus {
 
 // TODO: Confirm that the handshake is accepted
 pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str) -> WebSocketResult<SyncClient<'a, T>> {
-    // Create a tcpstream to the host
     let mut socket = TcpStream::connect(format!("{}:{}", host, port.to_string()))?;
 
-    let key = gen_ws_key();
+    let sec_websocket_key = gen_key();
 
     let headers = HashMap::from([
         ("Upgrade", "websocket"),
         ("Connection", "Upgrade"),
-        ("Sec-WebSocket-Key", key.as_str()),
+        ("Sec-WebSocket-Key", sec_websocket_key.as_str()),
         ("Sec-WebSocket-Version", "13"),
         ("User-agent", "rust-websocket-std"),
     ]);
@@ -65,6 +63,13 @@ pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str) -> WebSocket
 
     // Read response and verify that the server accepted switch protocols
     let response = Response::parse(buffer.as_slice());
+    
+    // Verify Sec-WebSocket-Accept
+    let accepted = verify_key(&sec_websocket_key, sec_websocket_accept);
+    if !accepted {
+        return Err(WebSocketError::HandShakeError(String::from("Invalid 'Sec-WebSocket-Accept'")));
+    }
+
     if response.get_status_code() == 0 || response.get_status_code() != SWITCHING_PROTOCOLS { return Err(WebSocketError::HandShakeError(format!("HandShake Error: {}", String::from_utf8_lossy(&buffer)))) }
     
     println!("Response: ");
