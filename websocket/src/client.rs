@@ -173,7 +173,7 @@ impl<'a, T> SyncClient<'a, T> {
     }
 
     // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
-    pub fn send_message(&mut self, payload: &str) -> WebSocketResult<()> {
+    pub fn send(&mut self, payload: &str) -> WebSocketResult<()> {
         // Connection was closed
         if self.connection_status == ConnectionStatus::CLOSE {
             self.close_iters += 1;

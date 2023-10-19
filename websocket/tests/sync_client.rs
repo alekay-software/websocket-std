@@ -132,7 +132,7 @@ fn connection_success_no_close_handshake() {
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
-    let connection = sync_connect("localhost", port, "/");
+    let connection = sync_connect("localhost", port, "/", None);
     let mut client: SyncClient<'static, u32> = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
 }
@@ -145,7 +145,7 @@ fn connection_error_no_server_running() {
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
-    let connection: WebSocketResult<SyncClient<'static, u32>> = sync_connect("localhost", 0, "/");
+    let connection: WebSocketResult<SyncClient<'static, u32>> = sync_connect("localhost", 0, "/", None);
     assert!(connection.is_err());
 }
 
@@ -159,7 +159,7 @@ fn mock_hanshake_error_unsuported_ws_version() {
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
-    let connection: WebSocketResult<SyncClient<'static, u32>> = sync_connect("localhost", port, "/");
+    let connection: WebSocketResult<SyncClient<'static, u32>> = sync_connect("localhost", port, "/", None);
     assert!(connection.is_err());
     match connection.err().unwrap() {
         WebSocketError::HandShakeError(_) => assert!(true),
@@ -177,7 +177,7 @@ fn mock_hanshake_error_invalid_header() {
         conn.shutdown(Shutdown::Both).unwrap();
     });
 
-    let connection: WebSocketResult<SyncClient<'static, u32>> = sync_connect("localhost", port, "/");
+    let connection: WebSocketResult<SyncClient<'static, u32>> = sync_connect("localhost", port, "/", None);
     assert!(connection.is_err());
     match connection.err().unwrap() {
         WebSocketError::HandShakeError(_) => assert!(true),
@@ -209,12 +209,12 @@ fn send_data_success_on_one_frame() {
 
     });
 
-    let connection = sync_connect("localhost", port, "/");
+    let connection = sync_connect("localhost", port, "/", None);
     let mut client = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
     client.set_response_cb(callback, None);
 
-    client.send_message("Hello").unwrap();
+    client.send("Hello").unwrap();
 
     let mut i = 0;
     while i < 2 {
@@ -253,13 +253,13 @@ fn send_data_success_more_than_one_frame() {
 
     });
 
-    let connection = sync_connect("localhost", port, "/");
+    let connection = sync_connect("localhost", port, "/", None);
     let mut client = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
     client.set_message_size(3);
     client.set_response_cb(callback, None);
 
-    client.send_message("Hello").unwrap();
+    client.send("Hello").unwrap();
 
     let mut i = 0;
     while i < 3 {
@@ -270,7 +270,7 @@ fn send_data_success_more_than_one_frame() {
 }
 
 #[test]
-fn connect_send_message_and_client_close_successfully() {
+fn connect_send_and_client_close_successfully() {
     fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: Option<Arc<u32>>) {
         assert_eq!(msg, String::from("Hello"));
     }
@@ -298,12 +298,12 @@ fn connect_send_message_and_client_close_successfully() {
 
     });
 
-    let connection = sync_connect("localhost", port, "/");
+    let connection = sync_connect("localhost", port, "/", None);
     let mut client = connection.unwrap();
     client.set_timeout(Duration::from_secs(1));
     client.set_response_cb(callback, None);
 
-    client.send_message("Hello").unwrap();
+    client.send("Hello").unwrap();
     assert!(client.is_connected());
     client.event_loop().unwrap();
     assert!(client.is_connected());
@@ -324,3 +324,5 @@ fn server_close_connection_and_no_close_frame_received() {
 // Test connection closed by the server
 
 // Test Control frames can be interjected in the middle of a fragmented message.
+
+// Test accept protocol

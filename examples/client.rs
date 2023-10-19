@@ -15,7 +15,8 @@ fn on_message(ws: &mut WebSocket, _msg: String, data: Option<WSData>) {
     let data = data.unwrap();
     let mut data = data.borrow_mut();
     data.count += 1;
-    ws.send_message("Hello world").unwrap();
+    println!("[SERVER]: {}", _msg);
+    ws.send("Hello world").unwrap();
 }
 
 fn main() -> WebSocketResult<()> {
@@ -44,10 +45,10 @@ fn main() -> WebSocketResult<()> {
     c1.set_response_cb(on_message, Some(data.clone()));
     c1.set_message_size(1024);
 
-    c1.send_message("Hello world")?;
+    c1.send("Hello world")?;
     let start = Instant::now();
     while c1.is_connected() {
-        c1.send_message("Hello amigos")?;
+        c1.send("Hello amigos")?;
         c1.event_loop()?; 
         if start.elapsed().as_secs() >= 40 { break }
     }
