@@ -1,4 +1,3 @@
-use std::io::BufRead;
 use std::time::Instant;
 use websocket_std::client::{sync_connect, SyncClient};
 use websocket_std::result::WebSocketResult;
@@ -32,7 +31,13 @@ fn main() -> WebSocketResult<()> {
         path = path
     );
 
-    let mut c1: WebSocket = sync_connect(host, port, path)?;
+    // List of protocols to accept
+    let protocols = ["chat", "superchat"];
+    let mut c1: WebSocket = sync_connect(host, port, path, Some(&protocols))?;
+
+    if let Some(protocol) = c1.protocol() {
+        println!("Accepted protocol: {}", protocol); 
+    }
 
     println!("Connected to VAM Scoreboard");
 
@@ -42,7 +47,8 @@ fn main() -> WebSocketResult<()> {
     c1.send_message("Hello world")?;
     let start = Instant::now();
     while c1.is_connected() {
-        c1.event_loop()?;
+        c1.send_message("Hello amigos")?;
+        c1.event_loop()?; 
         if start.elapsed().as_secs() >= 40 { break }
     }
     

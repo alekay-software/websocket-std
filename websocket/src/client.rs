@@ -30,18 +30,28 @@ enum ConnectionStatus {
 }
 
 // TODO: Confirm that the handshake is accepted
-pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str) -> WebSocketResult<SyncClient<'a, T>> {
+// TODO: Protocol and extensions
+pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str, subprotocols: Option<&[&str]>) -> WebSocketResult<SyncClient<'a, T>> {
     let mut socket = TcpStream::connect(format!("{}:{}", host, port.to_string()))?;
 
     let sec_websocket_key = gen_key();
 
-    let headers = HashMap::from([
+    let mut headers: HashMap<&str, &str> = HashMap::from([
         ("Upgrade", "websocket"),
         ("Connection", "Upgrade"),
-        ("Sec-WebSocket-Key", sec_websocket_key.as_str()),
+        ("Sec-WebSocket-Key", &sec_websocket_key),
         ("Sec-WebSocket-Version", "13"),
         ("User-agent", "rust-websocket-std"),
     ]);
+
+    let mut protocols_value = String::new();
+    if let Some(protocols) = subprotocols {
+        for p in protocols {
+            protocols_value.push_str(p);
+            protocols_value.push_str(", ");
+        }
+        headers.insert("Sec-WebSocket-Protocol", &(protocols_value)[0..protocols_value.len()-2]);
+    }
 
     let request = Request::new(Method::GET, path, "HTTP/1.1", Some(headers));
 
@@ -78,7 +88,7 @@ pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str) -> WebSocket
     // Set socket to non-blocking mode
     socket.set_nonblocking(true)?;
     
-    let client = SyncClient::new(host, port, path, socket);
+    let client = SyncClient::new(host, port, path, socket, response.header("Sec-WebSocket-Protocol"));
 
     Ok(client)
 }
@@ -109,13 +119,15 @@ pub struct SyncClient<'a, T> {
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket (bytes that didn't use to create a frame)
     recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
     cb_data: Option<Arc<T>>,
-    close_iters: usize                                       // Count the number of times send_message tries to execute after the close. If <= 1 don't raise error, otherwise raise ConnectionClose error 
+    protocol: Option<String>,
+    close_iters: usize,                                      // Count the number of times send_message tries to execute after the close. If <= 1 don't raise error, otherwise raise ConnectionClose error 
 }                                                            // The close connection depends on the order of the functions event_loop and is_connected
+                        
 
 // TODO: No se implementa la funcion de cierre de la conexion, la conexion se cierra cuando termina la vida del cliente
 // TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
 impl<'a, T> SyncClient<'a, T> {
-    fn new(host: &'a str, port: u16, path: &'a str, stream: TcpStream) -> Self {
+    fn new(host: &'a str, port: u16, path: &'a str, stream: TcpStream, protocol: Option<String>) -> Self {
         SyncClient { 
             host, 
             port, 
@@ -130,12 +142,19 @@ impl<'a, T> SyncClient<'a, T> {
             recv_data: Vec::new(), 
             timeout: DEFAULT_TIMEOUT, 
             cb_data: None,
+            protocol,
             close_iters: 0
         }
     }
 
     pub fn is_connected(&self) -> bool {
         self.connection_status != ConnectionStatus::CLOSE
+    }
+
+    // Returns the protocol accepted by the server
+    pub fn protocol(&self) -> Option<&str> {
+        if self.protocol.is_none() { return None };
+        return Some(self.protocol.as_ref().unwrap().as_str());
     }
 
     // TODO: The message size does not take into account
@@ -330,7 +349,6 @@ impl<'a, T> SyncClient<'a, T> {
                         println!("Server wants to close the connection");
                         let status_code = WSStatus::from_bits(status_code);
 
-
                         let reason = &data[2..data.len()];
                         let mut status_code = if status_code.is_some() { status_code.unwrap() } else { WSStatus::PROTOCOL_ERROR };
                         
@@ -338,6 +356,8 @@ impl<'a, T> SyncClient<'a, T> {
                         if error { status_code = WSStatus::PROTOCOL_ERROR }
 
                         // Enqueue close frame to response to the server
+                        self.send_frame_queue.clear();
+                        self.recv_frame_queue.clear();
                         let close_frame = ControlFrame::new(FLAG::FIN, OPCODE::CLOSE, Some(status_code.bits()), reason.to_vec(), true, None);
                         self.send_frame_queue.push_front(Box::new(close_frame));
 
