@@ -33,7 +33,7 @@ fn main() -> WebSocketResult<()> {
     );
 
     // List of protocols to accept
-    let protocols = ["chat", "superchat"];
+    let protocols = ["socoreboard", "chat"];
     let mut c1: WebSocket = sync_connect(host, port, path, Some(&protocols))?;
 
     if let Some(protocol) = c1.protocol() {
@@ -48,7 +48,6 @@ fn main() -> WebSocketResult<()> {
     c1.send("Hello world")?;
     let start = Instant::now();
     while c1.is_connected() {
-        c1.send("Hello amigos")?;
         c1.event_loop()?; 
         if start.elapsed().as_secs() >= 40 { break }
     }

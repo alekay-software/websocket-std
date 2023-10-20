@@ -71,3 +71,60 @@ grcov . --binary-path ./target/debug/deps/ -s . -t html --branch --ignore-not-ex
 ```
 
 The report will be generated at ``target/coverage/``, open ``index.html`` with a browser to see the results.
+
+## Python websocket server to test
+Code of a python3 websocket server to test the client
+
+### Requirements
+- pip install websockets==11.0.3
+
+### Code
+```python
+import asyncio
+from websockets.frames import Frame
+from websockets.server import serve
+from websockets.extensions import ServerExtensionFactory, Extension
+from websockets.typing import ExtensionParameter, ExtensionName
+from typing import Optional, Sequence, Tuple, List, Union
+
+HOST  = "0.0.0.0"
+PORT  = 3000
+protocol = ["scoreboard", "app"]
+
+class PersonExtension(Extension):
+    def __init__(self, name: str, person_name):
+        self.name = ExtensionName(name)
+        self.person_name = person_name
+
+    def decode(self, frame: Frame, *, max_size: Union[int, None] = None) -> Frame:
+        return frame
+    
+    def encode(self, frame: Frame) -> Frame:
+        frame.data += (" " + self.person_name).encode("utf-8")
+        return frame
+
+def process_param(
+        params: Sequence[ExtensionParameter], 
+        accepted_extensions: Sequence[Extension]
+    ) -> Tuple[List[ExtensionParameter], Extension]:
+
+    ext = PersonExtension("person", params[0][1])
+
+    return ([*params], ext)
+
+sef = ServerExtensionFactory()
+sef.name = "person"
+sef.process_request_params = process_param
+
+async def echo(websocket):
+    async for message in websocket:
+        if websocket.open:
+            # print("Message: ", message)
+            await websocket.send(message)
+
+async def main():
+    async with serve(echo, HOST, PORT, subprotocols=protocol, extensions=[sef]):
+        await asyncio.Future()  # run forever
+
+asyncio.run(main())
+```

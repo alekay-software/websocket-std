@@ -42,6 +42,7 @@ pub fn sync_connect<'a, T>(host: &'a str, port: u16, path: &'a str, subprotocols
         ("Sec-WebSocket-Key", &sec_websocket_key),
         ("Sec-WebSocket-Version", "13"),
         ("User-agent", "rust-websocket-std"),
+        ("Sec-WebSocket-Extensions", "person; name=ME_GUSTA_ESCUELA"),
     ]);
 
     let mut protocols_value = String::new();
