@@ -15,6 +15,7 @@ use crate::http::request::{Request, Method};
 use crate::http::response::Response;
 use std::sync::Arc;
 use crate::ws_basic::key::{gen_key, verify_key};
+use crate::extension::{Extension, Parameter};
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -121,6 +122,7 @@ pub struct SyncClient<'a, T> {
     recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
     cb_data: Option<Arc<T>>,
     protocol: Option<String>,
+    extensions: Vec<Extension>,
     close_iters: usize,                                      // Count the number of times send_message tries to execute after the close. If <= 1 don't raise error, otherwise raise ConnectionClose error 
 }                                                            // The close connection depends on the order of the functions event_loop and is_connected
                         
@@ -144,6 +146,7 @@ impl<'a, T> SyncClient<'a, T> {
             timeout: DEFAULT_TIMEOUT, 
             cb_data: None,
             protocol,
+            extensions: Vec::new(),
             close_iters: 0
         }
     }

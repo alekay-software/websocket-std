@@ -3,6 +3,10 @@ use websocket_std::client::{sync_connect, SyncClient};
 use websocket_std::result::WebSocketResult;
 use std::sync::Arc;
 use std::cell::RefCell;
+use websocket_std::extension::Parameter;
+use websocket_std::parameter;
+use std::collections::HashMap;
+
 
 struct Data {
     count: usize,
@@ -24,6 +28,22 @@ fn main() -> WebSocketResult<()> {
     let port: u16 = 3000;
     let path: &str = "/";
     let data: WSData = Arc::new(RefCell::new(Data { count: 0 }));
+    
+    let p1 = parameter!("person");
+    let p2 = parameter!("person"; "name");
+    let p3 = parameter!("person"; "name=sergio", "apellido=ramirez ojea");
+    let p4 = parameter!("person"; "name=sergio", "apellido=ramirez", "edad=24");
+    
+    p1.print();
+    println!();
+    p2.print();
+    println!();
+    p3.print();
+    println!();
+    p4.print();
+    println!();
+
+    return Ok(());
 
     println!(
         "Connecting to {host}:{port}{path}",
