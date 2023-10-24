@@ -15,25 +15,25 @@ pub enum Method {
     GET
 }
 
-pub struct Request<'a> {
+pub struct Request {
     method: Method,
-    path: &'a str,
-    version: &'a str,
-    headers: Headers<'a>,
+    path: String,
+    version: String,
+    headers: Headers<String>,
 }
 
-impl<'a> Request<'a> {
-    pub fn new(method: Method, path: &'a str, version: &'a str, headers: Option<Headers<'a>>) -> Self {
+impl Request  {
+    pub fn new(method: Method, path: &str, version: &str, headers: Option<Headers<String>>) -> Self {
         let h = match headers {
             Some(map) => map,
-            None => HashMap::<&str, &str>::new()
+            None => HashMap::new()
         };
         
-        Request { method, path, version, headers: h }
+        Request { method, path: path.to_string(), version: version.to_string(), headers: h }
     }
 }
 
-impl<'a> Serialize for Request<'a> {
+impl Serialize for Request {
 
     fn serialize(&self) -> Vec<u8> {
         let mut data = vec![];
@@ -55,6 +55,8 @@ impl<'a> Serialize for Request<'a> {
         }
 
         data.extend(END_LINE.as_bytes());
+
+        println!("Request: {}", String::from_utf8_lossy(data.as_slice()));
 
         return data;
     }

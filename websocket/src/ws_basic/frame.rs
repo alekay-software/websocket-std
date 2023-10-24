@@ -98,6 +98,7 @@ impl Frame for DataFrame {
 pub struct ControlFrame {
     header: Header,
     data: Vec<u8>,
+    status_code: Option<u16>,
 }
 
 impl ControlFrame {
@@ -120,8 +121,13 @@ impl ControlFrame {
             merge_data.extend(status_code.unwrap().to_be_bytes());
         }
         merge_data.extend(data);
-        ControlFrame { header, data: merge_data }
+        ControlFrame { header, data: merge_data, status_code }
     }
+
+    pub fn get_status_code(&self) -> Option<u16> {
+        self.status_code
+    }
+
 }
 
 impl Frame for ControlFrame {
