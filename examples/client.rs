@@ -1,7 +1,6 @@
 use std::time::Instant;
-use websocket_std::client::{SyncClient, Config, Reason};
+use websocket_std::client::{SyncClient, Config, Reason, WSData, create_ws_data};
 use websocket_std::result::WebSocketResult;
-use std::sync::Arc;
 use std::cell::RefCell;
 
 struct Data {
@@ -10,10 +9,10 @@ struct Data {
     close: bool,
 }
 
-type WebSocket<'a> = SyncClient<'a, RefCell<Data>>;
-type WSData = Arc<RefCell<Data>>;
+type WebSocket<'a> = SyncClient<'a, WSData<Data>>;
 
-fn on_message(ws: &mut WebSocket, _msg: String, data: Option<WSData>) {
+
+fn on_message(ws: &mut WebSocket, _msg: String, data: Option<WSData<Data>>) {
     let data = data.unwrap();
     let mut data = data.borrow_mut();
     data.count += 1;
@@ -21,7 +20,7 @@ fn on_message(ws: &mut WebSocket, _msg: String, data: Option<WSData>) {
     ws.send("Hello world").unwrap();
 }
 
-fn on_connect(ws: &mut WebSocket, data: Option<WSData>) {
+fn on_connect(ws: &mut WebSocket, data: Option<WSData<Data>>) {
     println!("Connected");
     let protocol = if ws.protocol().is_some() { ws.protocol().unwrap() } else { "--" };
     println!("Accepted protocol: {protocol}");
@@ -31,7 +30,7 @@ fn on_connect(ws: &mut WebSocket, data: Option<WSData>) {
     ws.send("Hello world");
 }
 
-fn on_close(reason: Reason, data: Option<WSData>) {
+fn on_close(reason: Reason, data: Option<WSData<Data>>) {
     let mut who_closed = "";
     let mut code = 0u16;
 
@@ -58,13 +57,14 @@ fn main() -> WebSocketResult<()> {
     let host: &str = "localhost";
     let port: u16 = 3000;
     let path: &str = "/";
-    let data: WSData = Arc::new(RefCell::new(Data { count: 0, connected: false, close: false }));
+
+    let data = Data { close: false, count: 0, connected: false };
+    let data: WSData<Data> = create_ws_data(data);
 
     let config = Config {
         on_connect: Some(on_connect),
         on_data: Some(on_message),
-        // on_close: Some(on_close),
-        on_close: Some(|_, _| { println!("Closure para cerrar la conexion") }),
+        on_close: Some(on_close),
         data: Some(data.clone()),
         protocols: Some(&["chat", "superchat"])
     };

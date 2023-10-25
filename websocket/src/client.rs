@@ -15,12 +15,19 @@ use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use crate::http::response::Response;
 use std::sync::Arc;
+use std::cell::RefCell;
 use crate::ws_basic::key::{gen_key, verify_key};
 use crate::extension::Extension;
 
 const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const SWITCHING_PROTOCOLS: u16 = 101;
+
+pub type WSData<T> = Arc<RefCell<T>>;
+
+pub fn create_ws_data<T>(data: T) -> WSData<T> {
+    Arc::new(RefCell::new(data))
+}
 
 #[allow(non_camel_case_types)]
 #[derive(PartialEq)]
@@ -47,10 +54,10 @@ enum EventIO {
 }
 
 pub struct Config<'a, T> {
-    pub on_connect: Option<fn(&mut SyncClient<'a, T>, Option<Arc<T>>)>, 
-    pub on_data: Option<fn(&mut SyncClient<'a, T>, String, Option<Arc<T>>)>,
-    pub on_close: Option<fn(Reason, Option<Arc<T>>)>,
-    pub data: Option<Arc<T>>,
+    pub on_connect: Option<fn(&mut SyncClient<'a, WSData<T>>, Option<WSData<T>>)>, 
+    pub on_data: Option<fn(&mut SyncClient<'a, WSData<T>>, String, Option<WSData<T>>)>,
+    pub on_close: Option<fn(Reason, Option<WSData<T>>)>,
+    pub data: Option<WSData<T>>,
     pub protocols: Option<&'a[&'a str]>,
 }
 
@@ -79,13 +86,13 @@ pub struct SyncClient<'a, T> {
     connection_status: ConnectionStatus,
     message_size: u64,
     timeout: Duration,
-    on_data: Option<fn(&mut Self, String, Option<Arc<T>>)>, 
-    on_connect: Option<fn(&mut Self, Option<Arc<T>>)>,                            
-    on_close: Option<fn(Reason, Option<Arc<T>>)>,
+    on_data: Option<fn(&mut Self, String, Option<WSData<T>>)>, 
+    on_connect: Option<fn(&mut Self, Option<WSData<T>>)>,                            
+    on_close: Option<fn(Reason, Option<WSData<T>>)>,
     stream: Option<TcpStream>,
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket (bytes that didn't use to create a frame)
     recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
-    cb_data: Option<Arc<T>>,
+    cb_data: Option<WSData<T>>,
     protocol: Option<String>,
     extensions: Vec<Extension>,
     input_events: VecDeque<Event>,
