@@ -48,14 +48,21 @@ enum Event {
     NO_DATA,
 }
 
+fn is_websocket_data(event: &Event) -> bool {
+    match event {
+        Event::WEBSOCKET_DATA(_) => true,
+        _ => false
+    }
+}
+
 enum EventIO {
     INPUT,
     OUTPUT
 }
 
 pub struct Config<'a, T> {
-    pub on_connect: Option<fn(&mut SyncClient<'a, WSData<T>>, Option<WSData<T>>)>, 
-    pub on_data: Option<fn(&mut SyncClient<'a, WSData<T>>, String, Option<WSData<T>>)>,
+    pub on_connect: Option<fn(&mut SyncClient<'a, T>, Option<WSData<T>>)>, 
+    pub on_data: Option<fn(&mut SyncClient<'a, T>, String, Option<WSData<T>>)>,
     pub on_close: Option<fn(Reason, Option<WSData<T>>)>,
     pub data: Option<WSData<T>>,
     pub protocols: Option<&'a[&'a str]>,
@@ -165,7 +172,7 @@ impl<'a, T> SyncClient<'a, T> {
         
         let request = Request::new(Method::GET, path, "HTTP/1.1", Some(headers));
         
-        self.output_events.push_back(Event::HTTP_REQUEST(request));
+        self.output_events.push_front(Event::HTTP_REQUEST(request)); // Push front, because the client could execute send before init (store the frames to send to do it later)
         self.websocket_key = sec_websocket_key;
         self.connection_status = ConnectionStatus::HANDSHAKE;
         let socket = socket.unwrap();
@@ -193,10 +200,7 @@ impl<'a, T> SyncClient<'a, T> {
     // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
     pub fn send(&mut self, payload: &str) -> WebSocketResult<()> {
         // Connection was closed
-        if self.connection_status == ConnectionStatus::NOT_INIT || self.connection_status == ConnectionStatus::HANDSHAKE {
-            return Err(WebSocketError::SocketError(String::from("Client is not initialized")));
-            // return Ok(());
-        }
+
         if self.connection_status == ConnectionStatus::CLOSE {
             self.close_iters += 1;
             match self.connection_status {
@@ -235,14 +239,28 @@ impl<'a, T> SyncClient<'a, T> {
     
         let event = self.read_bytes_from_socket()?;
         self.insert_input_event(event);
- 
-        let in_event = self.input_events.pop_front();
-        let out_event = self.output_events.pop_front();
+        
+        let in_event = self.input_events.pop_front();     
+        // Check that the message taken from the queue is not a websocket event and the state of the websocket is different
+        // - if the state is HANDSHAKE dont pop an event if is a websocket event
+        let out_event = self.pop_output_event();
 
         if in_event.is_some() { self.handle_event(in_event.unwrap(), EventIO::INPUT)? };
         if out_event.is_some() { self.handle_event(out_event.unwrap(), EventIO::OUTPUT)? };
 
         return Ok(())
+    }
+
+    fn pop_output_event(&mut self) -> Option<Event> {
+        let mut out_event = self.output_events.pop_front();
+        if out_event.is_some() &&
+        self.connection_status == ConnectionStatus::HANDSHAKE && 
+        is_websocket_data(out_event.as_ref().unwrap())
+            {
+                self.output_events.push_front(out_event.unwrap());
+                out_event = None;
+            }
+        return out_event;
     }
 
     fn handle_recv_bytes_frame(&mut self) -> WebSocketResult<Event> {
