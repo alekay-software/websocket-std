@@ -15,7 +15,7 @@ use super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use crate::http::response::Response;
 use std::sync::Arc;
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut, Ref};
 use crate::ws_basic::key::{gen_key, verify_key};
 use crate::extension::Extension;
 
@@ -23,11 +23,23 @@ const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const SWITCHING_PROTOCOLS: u16 = 101;
 
-pub type WSData<T> = Arc<RefCell<T>>;
+#[derive(Clone)]
+pub struct WSData<T: Clone>(Arc<RefCell<T>>);
 
-pub fn create_ws_data<T>(data: T) -> WSData<T> {
-    Arc::new(RefCell::new(data))
+impl<T> WSData<T> where T: Clone {
+    pub fn new(data: T) -> Self {
+        WSData(Arc::new(RefCell::new(data)))
+    }
+
+    pub fn borrow_mut(&mut self) -> RefMut<'_, T> {
+       self.0.borrow_mut() 
+    }
+
+    pub fn borrow(&self) -> Ref<'_, T> {
+        self.0.borrow()
+    }
 }
+
 
 #[allow(non_camel_case_types)]
 #[derive(PartialEq)]
@@ -60,10 +72,8 @@ enum EventIO {
     OUTPUT
 }
 
-pub struct Config<'a, T> {
-    pub on_connect: Option<fn(&mut SyncClient<'a, T>, Option<WSData<T>>)>, 
-    pub on_data: Option<fn(&mut SyncClient<'a, T>, String, Option<WSData<T>>)>,
-    pub on_close: Option<fn(Reason, Option<WSData<T>>)>,
+pub struct Config<'a, T: Clone> {
+    pub callback: Option<fn(&mut SyncClient<'a, T>, WSEvent, Option<WSData<T>>)>,
     pub data: Option<WSData<T>>,
     pub protocols: Option<&'a[&'a str]>,
 }
@@ -72,6 +82,12 @@ pub struct Config<'a, T> {
 pub enum Reason {
     SERVER_CLOSE(u16),
     CLIENT_CLOSE(u16)
+}
+
+pub enum WSEvent { 
+    ON_CONNECT,
+    ON_CLOSE(Reason),
+    ON_TEXT(String),
 }
 
 // [] TODO: Cerrar el socket cuando la conexion se ha cerrado por alguno de los 2 puntos y la cola de mensajes esta vacia.
@@ -86,20 +102,18 @@ pub enum Reason {
 // [] TODO: Send the size of the buffer to read data from the stream, so the client will decide the perfomance base on the memory available or the size of the messages that the system is going to receive
 // Remove warning dead code for [host, port, path] fields. The Client keeps this information because could be useful in the future.
 #[allow(dead_code)]
-pub struct SyncClient<'a, T> {
+pub struct SyncClient<'a, T: Clone> {
     host: &'a str,
     port: u16,
     path: &'a str,
     connection_status: ConnectionStatus,
     message_size: u64,
     timeout: Duration,
-    on_data: Option<fn(&mut Self, String, Option<WSData<T>>)>, 
-    on_connect: Option<fn(&mut Self, Option<WSData<T>>)>,                            
-    on_close: Option<fn(Reason, Option<WSData<T>>)>,
     stream: Option<TcpStream>,
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket (bytes that didn't use to create a frame)
     recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
     cb_data: Option<WSData<T>>,
+    callback: Option<fn(&mut Self, WSEvent, Option<WSData<T>>)>,
     protocol: Option<String>,
     extensions: Vec<Extension>,
     input_events: VecDeque<Event>,
@@ -111,7 +125,7 @@ pub struct SyncClient<'a, T> {
 
 // TODO: No se implementa la funcion de cierre de la conexion, la conexion se cierra cuando termina la vida del cliente
 // TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
-impl<'a, T> SyncClient<'a, T> {
+impl<'a, T> SyncClient<'a, T> where T: Clone {
     pub fn new() -> Self {
         SyncClient { 
             host: "", 
@@ -119,14 +133,12 @@ impl<'a, T> SyncClient<'a, T> {
             path: "", 
             connection_status: ConnectionStatus::NOT_INIT, 
             message_size: DEFAULT_MESSAGE_SIZE, 
-            on_data: None,
-            on_connect: None,
-            on_close: None,
             stream: None, 
             recv_storage: Vec::new(), 
             recv_data: Vec::new(), 
             timeout: DEFAULT_TIMEOUT, 
             cb_data: None,
+            callback: None,
             protocol: None,
             extensions: Vec::new(),
             close_iters: 0,
@@ -154,9 +166,7 @@ impl<'a, T> SyncClient<'a, T> {
 
         if let Some(conf) = config {
             self.cb_data = conf.data;
-            self.on_data = conf.on_data;
-            self.on_close = conf.on_close;
-            self.on_connect = conf.on_connect;
+            self.callback = conf.callback;
             protocols = conf.protocols;
         }
 
@@ -282,8 +292,8 @@ impl<'a, T> SyncClient<'a, T> {
                     self.recv_data.extend_from_slice(frame.get_data());
                 }
 
-                if self.on_data.is_some() {
-                    let callback = self.on_data.unwrap();
+                if self.callback.is_some() {
+                    let callback = self.callback.unwrap();
 
                     let res = String::from_utf8(frame.get_data().to_vec());
                     if res.is_err() { return Err(WebSocketError::Utf8Error(res.err().unwrap().utf8_error())); }
@@ -292,7 +302,7 @@ impl<'a, T> SyncClient<'a, T> {
 
                     // Message received in a single frame
                     if self.recv_data.is_empty() {
-                        callback(self, msg, self.cb_data.clone());
+                        callback(self, WSEvent::ON_TEXT(msg), self.cb_data.clone());
 
                     // Message from a multiples frames     
                     } else {
@@ -304,7 +314,7 @@ impl<'a, T> SyncClient<'a, T> {
                         completed_msg.push_str(msg.as_str());
 
                         // Send the message to the callback function
-                        callback(self, completed_msg, self.cb_data.clone());
+                        callback(self, WSEvent::ON_TEXT(completed_msg), self.cb_data.clone());
                         
                         // There is 2 ways to deal with the vector data:
                         // 1 - Remove from memory (takes more time)
@@ -358,8 +368,9 @@ impl<'a, T> SyncClient<'a, T> {
                 self.protocol = response.header("Sec-WebSocket-Protocol");
 
                 self.connection_status = ConnectionStatus::OPEN;
-                if let Some(on_connect) = self.on_connect {
-                    on_connect(self, self.cb_data.clone());
+
+                if let Some(callback) = self.callback { 
+                    callback(self, WSEvent::ON_CONNECT, self.cb_data.clone());
                 }
             }
             _ =>  {} // Unreachable 
@@ -384,8 +395,9 @@ impl<'a, T> SyncClient<'a, T> {
             self.stream.as_mut().unwrap().shutdown(Shutdown::Both)?;
             self.stream = None;
 
-            if let Some(on_close) = self.on_close {
-                on_close(Reason::SERVER_CLOSE(status.unwrap_or(0)), self.cb_data.clone());
+            if let Some(callback) = self.callback {
+                let reason = Reason::SERVER_CLOSE(status.unwrap_or(0));
+                callback(self, WSEvent::ON_CLOSE(reason), self.cb_data.clone());
             }
         }
 
@@ -529,9 +541,9 @@ impl<'a, T> SyncClient<'a, T> {
                         self.connection_status = ConnectionStatus::CLOSE;
                         self.stream.as_mut().unwrap().shutdown(Shutdown::Both)?;
                         
-                        if let Some(on_close) = self.on_close {
-                            let f = frame.as_any().downcast_ref::<ControlFrame>().unwrap();
-                            on_close(Reason::CLIENT_CLOSE(f.get_status_code().unwrap()), self.cb_data.clone());
+                        if let Some(callback) = self.callback {
+                            let reason = Reason::CLIENT_CLOSE(frame.get_status_code().unwrap());
+                            callback(self, WSEvent::ON_CLOSE(reason), self.cb_data.clone());
                         }
                     },
                     ConnectionStatus::SERVER_WANTS_TO_CLOSE => {}  // Unreachable  
@@ -549,7 +561,7 @@ impl<'a, T> SyncClient<'a, T> {
 }
 
 // TODO: Refactor the code
-impl<'a, T> Drop for SyncClient<'a, T> {
+impl<'a, T> Drop for SyncClient<'a, T> where T: Clone {
     fn drop(&mut self) {
         if self.connection_status != ConnectionStatus::NOT_INIT &&
            self.connection_status != ConnectionStatus::HANDSHAKE &&
@@ -587,4 +599,4 @@ impl<'a, T> Drop for SyncClient<'a, T> {
     }
 }
 
-unsafe impl<'a, T> Send for SyncClient<'a, T> {}
+unsafe impl<'a, T> Send for SyncClient<'a, T> where T: Clone {}
