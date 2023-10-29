@@ -1,0 +1,17 @@
+# Configura cbindgen para C++
+language = "C"
+namespace = "websocket_std"
+
+[struct]
+derive_constructor = true  # Habilita la generación de constructores
+
+[enum]
+enum_class = true  # Utiliza enum class en lugar de enumeraciones regulares en C++
+
+# Define tus estructuras que deseas exportar a C++
+[export]
+include = ["Host"]
+
+# [export.body]
+# Añade aquí las funciones y métodos que deseas exportar
+# Ejemplo: include = [Node::new]

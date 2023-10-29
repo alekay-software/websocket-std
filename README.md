@@ -128,3 +128,35 @@ async def main():
 
 asyncio.run(main())
 ```
+
+
+## Create a static lib for C++
+Using the cbindgen tool
+```console
+cbindgen --config cbindgen.toml --crate websocket-std --output websocket-std.h
+```
+
+or just create build.rs inside the crate to generate the code when build with cargo.
+Also include dev dependenci in cargo.toml
+
+```toml
+[build-dependencies]
+cbindgen = "0.24.0"
+```
+
+
+```rust
+extern crate cbindgen;
+
+use std::env;
+
+fn main() {
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    cbindgen::Builder::new()
+      .with_crate(crate_dir)
+      .generate()
+      .expect("Unable to generate bindings")
+      .write_to_file("bindings.h");
+}
+```

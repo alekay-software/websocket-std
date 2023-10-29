@@ -43,6 +43,7 @@ impl<T> WSData<T> where T: Clone {
 
 #[allow(non_camel_case_types)]
 #[derive(PartialEq)]
+#[repr(C)]
 enum ConnectionStatus {
     NOT_INIT,
     HANDSHAKE, 
@@ -53,6 +54,7 @@ enum ConnectionStatus {
 }
 
 #[allow(non_camel_case_types)]
+#[repr(C)]
 enum Event {
     WEBSOCKET_DATA(Box<dyn Frame>),
     HTTP_RESPONSE(Response),
@@ -67,6 +69,7 @@ fn is_websocket_data(event: &Event) -> bool {
     }
 }
 
+#[repr(C)]
 enum EventIO {
     INPUT,
     OUTPUT
@@ -79,11 +82,13 @@ pub struct Config<'a, T: Clone> {
 }
 
 #[allow(non_camel_case_types)]
+#[repr(C)]
 pub enum Reason {
     SERVER_CLOSE(u16),
     CLIENT_CLOSE(u16)
 }
 
+#[repr(C)]
 pub enum WSEvent { 
     ON_CONNECT,
     ON_CLOSE(Reason),
@@ -102,6 +107,7 @@ pub enum WSEvent {
 // [] TODO: Send the size of the buffer to read data from the stream, so the client will decide the perfomance base on the memory available or the size of the messages that the system is going to receive
 // Remove warning dead code for [host, port, path] fields. The Client keeps this information because could be useful in the future.
 #[allow(dead_code)]
+#[repr(C)]
 pub struct SyncClient<'a, T: Clone> {
     host: &'a str,
     port: u16,
@@ -127,6 +133,7 @@ pub struct SyncClient<'a, T: Clone> {
 // TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
 impl<'a, T> SyncClient<'a, T> where T: Clone {
     pub fn new() -> Self {
+        println!("SyncClient's constructor");
         SyncClient { 
             host: "", 
             port: 0, 

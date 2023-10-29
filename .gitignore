@@ -2,3 +2,5 @@
 target/
 .DS_Store
 *.profraw
+c-test/
+c_test_str
