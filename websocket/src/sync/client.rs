@@ -11,7 +11,7 @@ use crate::ws_basic::frame::{DataFrame, ControlFrame, Frame, FrameKind, bytes_to
 use crate::ws_basic::status_code::{WSStatus, evaulate_status_code};
 use crate::core::traits::{Serialize, Parse};
 use crate::core::binary::bytes_to_u16;
-use super::result::WebSocketResult;
+use super::super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use crate::http::response::Response;
 use std::sync::Arc;
@@ -76,7 +76,7 @@ enum EventIO {
 }
 
 pub struct Config<'a, T: Clone> {
-    pub callback: Option<fn(&mut SyncClient<'a, T>, WSEvent, Option<WSData<T>>)>,
+    pub callback: Option<fn(&mut WSClient<'a, T>, WSEvent, Option<WSData<T>>)>,
     pub data: Option<WSData<T>>,
     pub protocols: Option<&'a[&'a str]>,
 }
@@ -108,7 +108,7 @@ pub enum WSEvent {
 // Remove warning dead code for [host, port, path] fields. The Client keeps this information because could be useful in the future.
 #[allow(dead_code)]
 #[repr(C)]
-pub struct SyncClient<'a, T: Clone> {
+pub struct WSClient<'a, T: Clone> {
     host: &'a str,
     port: u16,
     path: &'a str,
@@ -131,10 +131,10 @@ pub struct SyncClient<'a, T: Clone> {
 
 // TODO: No se implementa la funcion de cierre de la conexion, la conexion se cierra cuando termina la vida del cliente
 // TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
-impl<'a, T> SyncClient<'a, T> where T: Clone {
+impl<'a, T> WSClient<'a, T> where T: Clone {
     pub fn new() -> Self {
-        println!("SyncClient's constructor");
-        SyncClient { 
+        println!("WSClient's constructor");
+        WSClient { 
             host: "", 
             port: 0, 
             path: "", 
@@ -191,10 +191,10 @@ impl<'a, T> SyncClient<'a, T> where T: Clone {
         
         self.output_events.push_front(Event::HTTP_REQUEST(request)); // Push front, because the client could execute send before init (store the frames to send to do it later)
         self.websocket_key = sec_websocket_key;
-        self.connection_status = ConnectionStatus::HANDSHAKE;
         let socket = socket.unwrap();
         socket.set_nonblocking(true)?;
         self.stream = Some(socket);
+        self.connection_status = ConnectionStatus::HANDSHAKE;
             
         Ok(())
     }
@@ -568,8 +568,9 @@ impl<'a, T> SyncClient<'a, T> where T: Clone {
 }
 
 // TODO: Refactor the code
-impl<'a, T> Drop for SyncClient<'a, T> where T: Clone {
+impl<'a, T> Drop for WSClient<'a, T> where T: Clone {
     fn drop(&mut self) {
+        println!("Dropping client");
         if self.connection_status != ConnectionStatus::NOT_INIT &&
            self.connection_status != ConnectionStatus::HANDSHAKE &&
            self.connection_status != ConnectionStatus::CLOSE &&
@@ -606,4 +607,4 @@ impl<'a, T> Drop for SyncClient<'a, T> where T: Clone {
     }
 }
 
-unsafe impl<'a, T> Send for SyncClient<'a, T> where T: Clone {}
+unsafe impl<'a, T> Send for WSClient<'a, T> where T: Clone {}

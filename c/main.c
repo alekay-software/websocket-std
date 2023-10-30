@@ -3,18 +3,37 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <string.h>
+#include <stdlib.h>
 
+#define FALSE 0
 #define TRUE 1 
 
-SyncClient *client;
+SyncWSClient *client;
+pthread_mutex_t mutex;
+int finish;
+
+void ws_handler(SyncWSClient* client, int event, void* data) {
+    printf("new event %i \n", event);
+    if (event == 0) { 
+        printf("Connected\n");
+    } else if (event == 1) {
+        printf("Closed\n");
+    } else if (event == 2) {
+        printf("TEXT\n");
+    }
+
+}
 
 // Función que será ejecutada por el hilo
 void *handler(void *arg) {
-    while (TRUE) {
-        if (!syncClientLoop(client)) { 
+    while (!finish) {
+        pthread_mutex_lock(&mutex);
+        if (!SyncWSClientLoop(client)) { 
             printf("Error in ws loop function");
             break; 
         }
+        pthread_mutex_unlock(&mutex);
     } 
 
     return NULL;
@@ -23,22 +42,44 @@ void *handler(void *arg) {
 int main() {
     char cadena[100];
     pthread_t hilo;
-    client = syncClientNew();
-    syncClientInit(client, "localhost", 3000, "/", NULL);
+    finish = FALSE;
+    pthread_mutex_init(&mutex, NULL);
+    
+    client = SyncWSClientNew();
 
     if (pthread_create(&hilo, NULL, handler, NULL) != 0) {
         fprintf(stderr, "Error al crear el hilo\n");
         return 1;
     }
 
-    // syncClientSend(client, "Hello from C code :)");
-    printf("Hello\n");
-    
+    SyncWSClientInit(client, "localhost", 3000, "/", ws_handler);
+    // SyncWSClientSend(client, "Hello from C code :)");
 
-    while (TRUE) {
+    while (!finish) {
         printf("Mensaje: ");
         fgets(cadena, sizeof(cadena), stdin);
-        syncClientSend(client, cadena);    
+        pthread_mutex_lock(&mutex);
+        if (strcmp(cadena, "fin\n") == 0) {
+            finish = TRUE;
+        } else {
+            SyncWSClientSend(client, cadena); 
+        }
+        pthread_mutex_unlock(&mutex);
+    }
+
+    pthread_join(hilo, NULL);
+    SyncWSClientDrop(client);
+
+    // int x = SyncWSClientLoop(client);
+    // printf("Error %i\n, ", x);
+    SyncWSClientLoop(client);
+    SyncWSClientLoop(client);
+    // SyncWSClientLoop(client);
+               
+    if (client == NULL) {
+        printf("Is null\n");
+    } else {
+        printf("Client is not null");
     }
 
     return 0;

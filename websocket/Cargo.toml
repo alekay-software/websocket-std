@@ -12,6 +12,10 @@ description = """
 Implementation websocket for ESP32 rust with std.
 """
 
+[lib]
+name = "websocket_std"
+crate-type = ["staticlib"]
+
 categories = ["embedded"]
 keywords = ["http", "async", "api"]
 

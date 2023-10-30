@@ -1,2 +1,1 @@
-mod syncClient;
-mod host;
+mod sync;
