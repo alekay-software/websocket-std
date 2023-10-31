@@ -76,7 +76,7 @@ enum EventIO {
 }
 
 pub struct Config<'a, T: Clone> {
-    pub callback: Option<fn(&mut WSClient<'a, T>, WSEvent, Option<WSData<T>>)>,
+    pub callback: Option<fn(&mut WSClient<'a, T>, &WSEvent, Option<WSData<T>>)>,
     pub data: Option<WSData<T>>,
     pub protocols: Option<&'a[&'a str]>,
 }
@@ -88,7 +88,6 @@ pub enum Reason {
     CLIENT_CLOSE(u16)
 }
 
-#[repr(C)]
 pub enum WSEvent { 
     ON_CONNECT,
     ON_CLOSE(Reason),
@@ -119,7 +118,7 @@ pub struct WSClient<'a, T: Clone> {
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket (bytes that didn't use to create a frame)
     recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
     cb_data: Option<WSData<T>>,
-    callback: Option<fn(&mut Self, WSEvent, Option<WSData<T>>)>,
+    callback: Option<fn(&mut Self, &WSEvent, Option<WSData<T>>)>,
     protocol: Option<String>,
     extensions: Vec<Extension>,
     input_events: VecDeque<Event>,
@@ -309,7 +308,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
 
                     // Message received in a single frame
                     if self.recv_data.is_empty() {
-                        callback(self, WSEvent::ON_TEXT(msg), self.cb_data.clone());
+                        callback(self, &WSEvent::ON_TEXT(msg), self.cb_data.clone());
 
                     // Message from a multiples frames     
                     } else {
@@ -321,7 +320,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                         completed_msg.push_str(msg.as_str());
 
                         // Send the message to the callback function
-                        callback(self, WSEvent::ON_TEXT(completed_msg), self.cb_data.clone());
+                        callback(self, &WSEvent::ON_TEXT(completed_msg), self.cb_data.clone());
                         
                         // There is 2 ways to deal with the vector data:
                         // 1 - Remove from memory (takes more time)
@@ -377,7 +376,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                 self.connection_status = ConnectionStatus::OPEN;
 
                 if let Some(callback) = self.callback { 
-                    callback(self, WSEvent::ON_CONNECT, self.cb_data.clone());
+                    callback(self, &WSEvent::ON_CONNECT, self.cb_data.clone());
                 }
             }
             _ =>  {} // Unreachable 
@@ -404,7 +403,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
 
             if let Some(callback) = self.callback {
                 let reason = Reason::SERVER_CLOSE(status.unwrap_or(0));
-                callback(self, WSEvent::ON_CLOSE(reason), self.cb_data.clone());
+                callback(self, &WSEvent::ON_CLOSE(reason), self.cb_data.clone());
             }
         }
 
@@ -550,7 +549,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                         
                         if let Some(callback) = self.callback {
                             let reason = Reason::CLIENT_CLOSE(frame.get_status_code().unwrap());
-                            callback(self, WSEvent::ON_CLOSE(reason), self.cb_data.clone());
+                            callback(self, &WSEvent::ON_CLOSE(reason), self.cb_data.clone());
                         }
                     },
                     ConnectionStatus::SERVER_WANTS_TO_CLOSE => {}  // Unreachable  

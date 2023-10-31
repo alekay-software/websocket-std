@@ -5,11 +5,17 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-enum WSEvent { 
+typedef enum { 
     ON_CONNECT,
-    ON_CLOSE,
     ON_TEXT,
-};
+    ON_CLOSE,
+} WSEvent_t;
+
+typedef enum {
+    con,
+    text,
+    clos,
+} RustEvent_t;
 
 typedef struct {} SyncWSClient;
 
@@ -75,5 +81,7 @@ int SyncWSClientSend(SyncWSClient* client, const char* message);
 * NULL
 */
 void* SyncWSClientDrop(SyncWSClient* client);
+
+WSEvent_t fromRustEvent(RustEvent_t* event);
 
 #endif

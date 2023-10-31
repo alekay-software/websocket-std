@@ -1,4 +1,4 @@
-use super::super::super::sync::client::{Config, WSEvent, WSData, WSClient};
+use super::super::super::sync::client::{Config, WSEvent as RWSEvent, WSData, WSClient};
 use std::ffi::{c_void, c_char, CStr, c_int};
 use std::alloc::{alloc, dealloc, Layout};
 use std::mem;
@@ -34,7 +34,7 @@ unsafe extern "C" fn SyncWSClientInit<'a>(client: *mut WSClient<'a, *mut c_void>
     let host = str::from_utf8(CStr::from_ptr(host).to_bytes()).unwrap();
     let path = str::from_utf8(CStr::from_ptr(path).to_bytes()).unwrap();
 
-    let callback: fn(&mut WSClient<'a, *mut c_void>, WSEvent, Option<WSData<*mut c_void>>) = mem::transmute(callback);
+    let callback: fn(&mut WSClient<'a, *mut c_void>, &RWSEvent, Option<WSData<*mut c_void>>) = mem::transmute(callback);
     let config = Config { callback: Some(callback), data: None, protocols: None };
     
     let client = &mut *client;
@@ -85,3 +85,35 @@ extern "C" fn SyncWSClientDrop<'a>(mut client: *mut WSClient<'a, *mut c_void>) -
     client = ptr::null_mut();
     ptr::null_mut()
 }
+
+#[repr(C)]
+enum WSEvent_t {
+    ON_CONNECT,
+    ON_TEXT,
+    ON_CLOSE,
+}
+
+// #[repr(C)]
+// struct WSEvent {
+//     event: WSEvent_t,
+//     data: *mut c_void 
+// }
+
+#[no_mangle]
+extern "C" fn fromRustEvent(event: &RWSEvent) -> WSEvent_t {
+    match event {
+        RWSEvent::ON_CONNECT => { WSEvent_t::ON_CONNECT },
+        RWSEvent::ON_TEXT(_) => { WSEvent_t::ON_TEXT },
+        RWSEvent::ON_CLOSE(_) => { WSEvent_t::ON_CLOSE }
+    }
+}
+
+// #[no_mangle]
+// extern "C" fn WSEventConnect() ->  WSEvent {
+//     WSEvent::ON_TEXT()
+// }
+
+// #[no_mangle]
+// extern "C" fn WSEventConnect() ->  WSEvent {
+//     WSEvent::CLOSE
+// }

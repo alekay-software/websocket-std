@@ -4,4 +4,4 @@ pub mod extension;
 mod ws_basic;
 mod http;
 mod core;
-mod ffi;
+pub mod ffi;
