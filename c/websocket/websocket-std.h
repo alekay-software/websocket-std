@@ -11,12 +11,12 @@ enum WSEvent {
     ON_TEXT,
 };
 
-typedef struct {} SyncWSClient;
+typedef struct _SyncWSClient SyncWSClient;
 
 /*
 * Creates a new SyncWSClient or NULL if an error occurred
 */
-SyncWSClient *SyncWSClientNew(void);
+SyncWSClient *ws_sync_client_new(void);
 
 
 /*
@@ -31,7 +31,7 @@ SyncWSClient *SyncWSClientNew(void);
 *
 *
 */
-void SyncWSClientInit(SyncWSClient *client,
+void ws_sync_client_init(SyncWSClient *client,
                     const char *host,
                     uint16_t port,
                     const char *path,
@@ -48,7 +48,7 @@ void SyncWSClientInit(SyncWSClient *client,
 * The error if the websocket got it.
 *
 */
-int SyncWSClientLoop(SyncWSClient* client);
+int ws_sync_client_loop(SyncWSClient* client);
 
 
 /*
@@ -62,7 +62,7 @@ int SyncWSClientLoop(SyncWSClient* client);
 * The error if the websocket got it.
 *
 */
-int SyncWSClientSend(SyncWSClient* client, const char* message);
+int ws_sync_client_send(SyncWSClient* client, const char* message);
 
 
 /*
@@ -74,6 +74,6 @@ int SyncWSClientSend(SyncWSClient* client, const char* message);
 * Return:
 * NULL
 */
-void* SyncWSClientDrop(SyncWSClient* client);
+void* ws_sync_client_drop(SyncWSClient* client);
 
 #endif
