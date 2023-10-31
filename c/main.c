@@ -9,34 +9,33 @@
 #define FALSE 0
 #define TRUE 1 
 
-SyncWSClient *client;
+WSSClient_t *client;
 pthread_mutex_t mutex;
 int finish;
 
-void ws_handler(SyncWSClient* client, RustEvent_t* rustEvent, void* data) {
-    WSEvent_t event = fromRustEvent(rustEvent);
+void ws_handler(WSSClient_t* client, RustEvent_t* rs_event, void* data) {
+    WSEvent_t event = fromRustEvent(rs_event);
     printf("new event %i \n", event);
-   
-    if (event == ON_CONNECT) { 
+    if (event == WSEvent_CONNECT) { 
         printf("Connected\n");
-    } else if (event == ON_CLOSE) {
+    } else if (event == WSEvent_CLOSE) {
         printf("Closed\n");
-    } else if (event == ON_TEXT) {
+    } else if (event == WSEvent_TEXT) {
         printf("TEXT\n");
     }
+
 }
 
 // Función que será ejecutada por el hilo
 void *handler(void *arg) {
     while (!finish) {
         pthread_mutex_lock(&mutex);
-        if (!SyncWSClientLoop(client)) { 
+        if (!wssclient_loop(client)) { 
             printf("Error in ws loop function");
             break; 
         }
         pthread_mutex_unlock(&mutex);
     } 
-
     return NULL;
 }
 
@@ -46,15 +45,19 @@ int main() {
     finish = FALSE;
     pthread_mutex_init(&mutex, NULL);
     
-    client = SyncWSClientNew();
+    client = wssclient_new();
+    if ( client == NULL ) {
+      printf("Client is NULL");
+    }
 
     if (pthread_create(&hilo, NULL, handler, NULL) != 0) {
         fprintf(stderr, "Error al crear el hilo\n");
         return 1;
     }
 
-    SyncWSClientInit(client, "localhost", 3000, "/", ws_handler);
-    // SyncWSClientSend(client, "Hello from C code :)");
+    printf("Hello\n");
+    wssclient_init(client, "localhost", 3000, "/", ws_handler);
+    printf("hello 2\n");
 
     while (!finish) {
         printf("Mensaje: ");
@@ -63,19 +66,16 @@ int main() {
         if (strcmp(cadena, "fin\n") == 0) {
             finish = TRUE;
         } else {
-            SyncWSClientSend(client, cadena); 
+            wssclient_send(client, cadena); 
         }
         pthread_mutex_unlock(&mutex);
     }
 
     pthread_join(hilo, NULL);
-    SyncWSClientDrop(client);
+    wssclient_drop(client);
 
-    // int x = SyncWSClientLoop(client);
-    // printf("Error %i\n, ", x);
-    SyncWSClientLoop(client);
-    SyncWSClientLoop(client);
-    // SyncWSClientLoop(client);
+    wssclient_loop(client);
+    wssclient_loop(client);
                
     if (client == NULL) {
         printf("Is null\n");

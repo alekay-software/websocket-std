@@ -6,7 +6,7 @@ use std::ptr;
 use std::str;
 
 #[no_mangle]
-extern "C" fn ws_sync_client_new<'a>() -> *mut WSClient<'a, *mut c_void> {
+extern "C" fn wssclient_new<'a>() -> *mut WSClient<'a, *mut c_void> {
     // Box doesn't return a Result type, that the reason to use layout, to check if the system
     // gave me memory to store the client.
     let size = mem::size_of::<WSClient<*mut c_void>>();
@@ -28,7 +28,7 @@ extern "C" fn ws_sync_client_new<'a>() -> *mut WSClient<'a, *mut c_void> {
 }
 
 #[no_mangle]
-unsafe extern "C" fn ws_sync_client_init<'a>(
+unsafe extern "C" fn wssclient_init<'a>(
     client: *mut WSClient<'a, *mut c_void>,
     host: *const c_char,
     port: u16,
@@ -47,7 +47,7 @@ unsafe extern "C" fn ws_sync_client_init<'a>(
 }
 
 #[no_mangle]
-unsafe extern "C" fn ws_sync_client_loop<'a>(client: *mut WSClient<'a, *mut c_void>) -> c_int {
+unsafe extern "C" fn wssclient_loop<'a>(client: *mut WSClient<'a, *mut c_void>) -> c_int {
     let mut status = 1;
 
     let client = &mut *client;
@@ -64,7 +64,7 @@ unsafe extern "C" fn ws_sync_client_loop<'a>(client: *mut WSClient<'a, *mut c_vo
 }
 
 #[no_mangle]
-unsafe extern "C" fn ws_sync_client_send<'a>(client: *mut WSClient<'a, *mut c_void>, message: *const c_char) -> c_int {
+unsafe extern "C" fn wssclient_send<'a>(client: *mut WSClient<'a, *mut c_void>, message: *const c_char) -> c_int {
     let mut status = 1;
     let msg = str::from_utf8(CStr::from_ptr(message).to_bytes()).unwrap();
 
@@ -81,9 +81,18 @@ unsafe extern "C" fn ws_sync_client_send<'a>(client: *mut WSClient<'a, *mut c_vo
 }
 
 #[no_mangle]
-extern "C" fn ws_sync_client_drop<'a>(client: *mut WSClient<'a, *mut c_void>) {
+extern "C" fn wssclient_drop<'a>(client: *mut WSClient<'a, *mut c_void>) {
     // Create a box from the raw pointer, at the end of the function the client will be dropped and the memory will be free.
     unsafe {
         dealloc(client as *mut u8, Layout::new::<WSClient<*mut c_void>>()) 
+    }
+}
+
+#[no_mangle]
+extern "C" fn fromRustEvent(event: &RWSEvent) -> c_int {
+    match event {
+        RWSEvent::ON_CONNECT => 0,
+        RWSEvent::ON_TEXT(_) => 1,
+        RWSEvent::ON_CLOSE(_) => 2,
     }
 }

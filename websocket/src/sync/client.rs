@@ -90,8 +90,8 @@ pub enum Reason {
 
 pub enum WSEvent { 
     ON_CONNECT,
-    ON_CLOSE(Reason),
     ON_TEXT(String),
+    ON_CLOSE(Reason),
 }
 
 // [] TODO: Cerrar el socket cuando la conexion se ha cerrado por alguno de los 2 puntos y la cola de mensajes esta vacia.
