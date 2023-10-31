@@ -13,16 +13,17 @@ SyncWSClient *client;
 pthread_mutex_t mutex;
 int finish;
 
-void ws_handler(SyncWSClient* client, int event, void* data) {
+void ws_handler(SyncWSClient* client, RustEvent_t* rustEvent, void* data) {
+    WSEvent_t event = fromRustEvent(rustEvent);
     printf("new event %i \n", event);
-    if (event == 0) { 
+   
+    if (event == ON_CONNECT) { 
         printf("Connected\n");
-    } else if (event == 1) {
+    } else if (event == ON_CLOSE) {
         printf("Closed\n");
-    } else if (event == 2) {
+    } else if (event == ON_TEXT) {
         printf("TEXT\n");
     }
-
 }
 
 // Función que será ejecutada por el hilo

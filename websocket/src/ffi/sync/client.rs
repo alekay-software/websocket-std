@@ -1,6 +1,6 @@
-use super::super::super::sync::client::{Config, WSClient, WSData, WSEvent};
+use super::super::super::sync::client::{Config, WSEvent as RWSEvent, WSData, WSClient};
+use std::ffi::{c_void, c_char, CStr, c_int};
 use std::alloc::{alloc, dealloc, Layout};
-use std::ffi::{c_char, c_int, c_void, CStr};
 use std::mem;
 use std::ptr;
 use std::str;
@@ -38,14 +38,9 @@ unsafe extern "C" fn ws_sync_client_init<'a>(
     let host = str::from_utf8(CStr::from_ptr(host).to_bytes()).unwrap();
     let path = str::from_utf8(CStr::from_ptr(path).to_bytes()).unwrap();
 
-    let callback: fn(&mut WSClient<'a, *mut c_void>, WSEvent, Option<WSData<*mut c_void>>) =
-        mem::transmute(callback);
-    let config = Config {
-        callback: Some(callback),
-        data: None,
-        protocols: None,
-    };
-
+    let callback: fn(&mut WSClient<'a, *mut c_void>, &RWSEvent, Option<WSData<*mut c_void>>) = mem::transmute(callback);
+    let config = Config { callback: Some(callback), data: None, protocols: None };
+    
     let client = &mut *client;
     client.init(host, port, path, Some(config)).unwrap();
     println!("Client init");
@@ -86,7 +81,7 @@ unsafe extern "C" fn ws_sync_client_send<'a>(client: *mut WSClient<'a, *mut c_vo
 }
 
 #[no_mangle]
-extern "C" fn ws_sync_client_drop<'a>(mut client: *mut WSClient<'a, *mut c_void>) {
+extern "C" fn ws_sync_client_drop<'a>(client: *mut WSClient<'a, *mut c_void>) {
     // Create a box from the raw pointer, at the end of the function the client will be dropped and the memory will be free.
     unsafe {
         dealloc(client as *mut u8, Layout::new::<WSClient<*mut c_void>>()) 
