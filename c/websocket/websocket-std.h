@@ -5,10 +5,25 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+typedef enum {
+    WSREASON_SERVER_CLOSED,
+    WSREASON_CLIENT_CLOSED
+} WSReason;
+
+typedef struct {
+    WSReason reason;
+    uint16_t status;
+} WSReason_t;
+
 typedef enum { 
     WSEvent_CONNECT,
     WSEvent_TEXT,
     WSEvent_CLOSE,
+} WSEvent;
+
+typedef struct {
+    WSEvent event;
+    void* value; 
 } WSEvent_t;
 
 typedef enum _OpaqueRustEvent_t RustEvent_t;

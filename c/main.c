@@ -15,19 +15,43 @@ int finish;
 
 void ws_handler(WSSClient_t* client, RustEvent_t* rs_event, void* data) {
     WSEvent_t event = fromRustEvent(rs_event);
-    printf("new event %i \n", event);
-    if (event == WSEvent_CONNECT) { 
+    printf("new event %i \n", event.event);
+    if (event.event == WSEvent_CONNECT) { 
         printf("Connected\n");
-    } else if (event == WSEvent_CLOSE) {
-        printf("Closed\n");
-    } else if (event == WSEvent_TEXT) {
-        printf("TEXT\n");
+    } else if (event.event == WSEvent_CLOSE) {
+        WSReason_t* ws_reason = (WSReason_t*) event.value;
+
+        switch (ws_reason->reason)
+        {
+        case WSREASON_SERVER_CLOSED: 
+            printf("Server close the connection C: %u\n", ws_reason->status);
+            break;
+        case WSREASON_CLIENT_CLOSED: 
+            printf("Client close the connection C: %u\n", ws_reason->status);
+            break;
+        default:
+            break;
+        }
+     
+        finish = TRUE;
+    } else if (event.event == WSEvent_TEXT) {
+        const char* message = (char*) event.value;
+        printf("TEXT (%zu): %s\n", strlen(message), message);
+        wssclient_send(client, "Hello from C response");
     }
 
 }
 
 // Función que será ejecutada por el hilo
 void *handler(void *arg) {
+
+    // for(int i = 0; i < 1000; i++) {
+    //     wssclient_send(client, "Hello from C");
+    // }
+
+    // printf("Se han enviado los mensajese en 10 segunos se recibiran todas las respuestas\n");
+    // sleep(10);
+
     while (!finish) {
         pthread_mutex_lock(&mutex);
         if (!wssclient_loop(client)) { 
@@ -47,7 +71,8 @@ int main() {
     
     client = wssclient_new();
     if ( client == NULL ) {
-      printf("Client is NULL");
+        printf("Buy more ram\n");
+        return 1; 
     }
 
     if (pthread_create(&hilo, NULL, handler, NULL) != 0) {
@@ -55,33 +80,25 @@ int main() {
         return 1;
     }
 
-    printf("Hello\n");
     wssclient_init(client, "localhost", 3000, "/", ws_handler);
-    printf("hello 2\n");
+    wssclient_send(client, "First msg form C");
+    // while (!finish) {
+    //     printf("Mensaje: ");
+    //     fgets(cadena, sizeof(cadena), stdin);
+    //     pthread_mutex_lock(&mutex);
+    //     if (strcmp(cadena, "fin\n") == 0) {
+    //         finish = TRUE;
+    //     } else {
+    //         wssclient_send(client, cadena); 
+    //     }
+    //     pthread_mutex_unlock(&mutex);
+    // }
 
-    while (!finish) {
-        printf("Mensaje: ");
-        fgets(cadena, sizeof(cadena), stdin);
-        pthread_mutex_lock(&mutex);
-        if (strcmp(cadena, "fin\n") == 0) {
-            finish = TRUE;
-        } else {
-            wssclient_send(client, cadena); 
-        }
-        pthread_mutex_unlock(&mutex);
-    }
+    sleep(10);
+    finish = TRUE;
 
     pthread_join(hilo, NULL);
     wssclient_drop(client);
-
-    wssclient_loop(client);
-    wssclient_loop(client);
-               
-    if (client == NULL) {
-        printf("Is null\n");
-    } else {
-        printf("Client is not null");
-    }
 
     return 0;
 }
