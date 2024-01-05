@@ -18,6 +18,14 @@ void ws_handler(WSSClient_t* client, RustEvent_t* rs_event, void* data) {
     printf("new event %i \n", event.event);
     if (event.event == WSEvent_CONNECT) { 
         printf("Connected\n");
+        if (event.value != NULL) {
+            char* msg = (char*) event.value;
+            for(int i = 0; i < strlen(msg); i++) {
+                printf("%c\n", *msg);
+                msg++;
+            }
+            printf("Message received on connected: %s\n", msg);
+        }
     } else if (event.event == WSEvent_CLOSE) {
         WSReason_t* ws_reason = (WSReason_t*) event.value;
 
@@ -37,7 +45,7 @@ void ws_handler(WSSClient_t* client, RustEvent_t* rs_event, void* data) {
     } else if (event.event == WSEvent_TEXT) {
         const char* message = (char*) event.value;
         printf("TEXT (%zu): %s\n", strlen(message), message);
-        wssclient_send(client, "Hello from C response");
+        // wssclient_send(client, "Hello from C response");
     }
 
 }
@@ -68,6 +76,7 @@ int main() {
     pthread_t hilo;
     finish = FALSE;
     pthread_mutex_init(&mutex, NULL);
+    printf("Hello\n");
     
     client = wssclient_new();
     if ( client == NULL ) {
@@ -80,8 +89,8 @@ int main() {
         return 1;
     }
 
-    wssclient_init(client, "localhost", 3000, "/", ws_handler);
-    wssclient_send(client, "First msg form C");
+    wssclient_init(client, "129.151.233.192", 3000, "/", ws_handler);
+    // wssclient_send(client, "First msg form C");
     // while (!finish) {
     //     printf("Mensaje: ");
     //     fgets(cadena, sizeof(cadena), stdin);

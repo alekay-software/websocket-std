@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use super::commons::END_LINE;
 use super::super::core::traits::{Parse, ParseError};
+use std::char::REPLACEMENT_CHARACTER;
 
 #[allow(dead_code)]
 pub struct Response {
@@ -29,6 +30,10 @@ impl Response {
         return Some(value.unwrap().clone(   ));
     }
 
+    pub fn body(&self) -> Option<&String> {
+        self.body.as_ref()
+    }
+
     pub fn print(&self) {
         println!("-------- Response --------");
         println!("Headers:");
@@ -49,7 +54,8 @@ impl Response {
 // TODO: Parse the rest of the response
 impl Parse for Response {
     fn parse(bytes: &[u8]) -> Result<Self, ParseError> {
-        let bytes = String::from_utf8_lossy(bytes);
+        // Convert into utf-8 String and replace the invalid characters
+        let bytes = String::from_utf8_lossy(bytes).replace("�", "");
 
         let end_header = bytes.find(format!("{}{}", END_LINE, END_LINE).as_str());
         if end_header.is_none() { return Err(ParseError) }

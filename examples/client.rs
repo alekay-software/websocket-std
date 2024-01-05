@@ -1,5 +1,5 @@
 use std::time::Instant;
-use websocket_std::client::{SyncClient, Config, Reason, WSData, WSEvent};
+use websocket_std::sync::client::{WSClient, Config, Reason, WSData, WSEvent};
 use websocket_std::result::WebSocketResult;
 
 #[derive(Clone)]
@@ -11,48 +11,51 @@ struct Data {
     msg: String
 }
 
-type WebSocket<'a> = SyncClient<'a, Data>;
+type WebSocket<'a> = WSClient<'a, Data>;
 
-fn websocket_handler(ws: &mut WebSocket, event: WSEvent, data: Option<WSData<Data>>) {
+fn websocket_handler(ws: &mut WebSocket, event: &WSEvent, data: Option<WSData<Data>>) {
     match event {
-        WSEvent::ON_CONNECT => on_connect(ws, data),
+        WSEvent::ON_CONNECT(msg) => on_connect(ws, msg, data),
         WSEvent::ON_TEXT(msg) => on_message(ws, msg, data),
         WSEvent::ON_CLOSE(reason) => on_close(reason, data)
     }
 }
 
-fn on_message(ws: &mut WebSocket, _msg: String, data: Option<WSData<Data>>) {
+fn on_message(ws: &mut WebSocket, _msg: &String, data: Option<WSData<Data>>) {
     let mut data = data.unwrap();
     let mut data = data.borrow_mut();
     data.count += 1;
     println!("[SERVER]: {}", _msg);
-    data.msg = _msg;
-    ws.send("Hello world").unwrap();
+    data.msg = _msg.clone();
+    //ws.send("Hello world").unwrap();
 }
 
-fn on_connect(ws: &mut WebSocket, data: Option<WSData<Data>>) {
+fn on_connect(ws: &mut WebSocket, _msg: &Option<String>, data: Option<WSData<Data>>) {
     println!("Connected");
     let protocol = if ws.protocol().is_some() { ws.protocol().unwrap() } else { "--" };
     println!("Accepted protocol: {protocol}");
+    if let Some(msg) = _msg {
+        println!("Message received on connect: {}", msg);
+    }
     let mut data = data.unwrap();
     let mut data = data.borrow_mut();
     data.connected = true;
-    ws.send("Hello world").unwrap();
+    // ws.send("Hello world").unwrap();
 }
 
-fn on_close(reason: Reason, data: Option<WSData<Data>>) {
+fn on_close(reason: &Reason, data: Option<WSData<Data>>) {
     let mut _who_closed = "";
     let mut _code = 0u16;
 
     match reason {
         Reason::SERVER_CLOSE(c) => {
             _who_closed = "server";
-            _code = c;
+            _code = *c;
         },
 
         Reason::CLIENT_CLOSE(c) => {
             _who_closed = "client";
-            _code = c;
+            _code = *c;
         }
     }
 
@@ -85,7 +88,7 @@ fn main() -> WebSocketResult<()> {
     );
 
     // List of protocols to accept
-    let mut c1 = SyncClient::new();
+    let mut c1 = WSClient::new();
 
 
     if let Some(protocol) = c1.protocol() {

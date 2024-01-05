@@ -88,8 +88,9 @@ pub enum Reason {
     CLIENT_CLOSE(u16)
 }
 
+#[allow(non_camel_case_types)]
 pub enum WSEvent { 
-    ON_CONNECT,
+    ON_CONNECT(Option<String>),
     ON_TEXT(String),
     ON_CLOSE(Reason),
 }
@@ -373,10 +374,16 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
 
                 self.protocol = response.header("Sec-WebSocket-Protocol");
 
+                let mut response_msg = None;
+                
+                if let Some(body) = response.body() {
+                   response_msg = Some(body.clone()); 
+                }
+
                 self.connection_status = ConnectionStatus::OPEN;
 
                 if let Some(callback) = self.callback { 
-                    callback(self, &WSEvent::ON_CONNECT, self.cb_data.clone());
+                    callback(self, &WSEvent::ON_CONNECT(response_msg), self.cb_data.clone());
                 }
             }
             _ =>  {} // Unreachable 

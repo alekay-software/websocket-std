@@ -116,7 +116,20 @@ extern "C" fn wssclient_drop<'a>(client: *mut WSClient<'a, *mut c_void>) {
 #[no_mangle]
 unsafe extern "C" fn fromRustEvent(event: &RWSEvent) -> WSEvent_t {
     match event {
-        RWSEvent::ON_CONNECT => WSEvent_t { event: WSEvent::ON_CONNECT, value: ptr::null_mut() }, 
+        RWSEvent::ON_CONNECT(msg) => {
+            let mut value = ptr::null_mut();
+            if let Some(m) = msg {
+                println!("[RUST] M: {}", m);
+                let m = m.replace('\0', "");
+                let m = m.trim();
+                let c_str = CString::new(m).map_err(|err| {
+                    eprintln!("Error converting to CString: {err}");
+                }).unwrap();
+                value = c_str.into_raw();
+            }
+            WSEvent_t { event: WSEvent::ON_CONNECT, value: value as *const c_void }
+        }
+        , 
         RWSEvent::ON_TEXT(msg) => {
             let c_str = CString::new(msg.clone()).unwrap();
             WSEvent_t { event: WSEvent::ON_TEXT, value: c_str.into_raw() as *const c_void }

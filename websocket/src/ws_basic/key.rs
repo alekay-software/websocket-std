@@ -1,4 +1,4 @@
-use rand;
+use getrandom as rand; 
 use base64;
 use sha1_smol::Sha1;
 
@@ -6,8 +6,9 @@ use sha1_smol::Sha1;
 const GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 pub fn gen_key() -> String {
-    let key: [u8; 16] = rand::random();
-    return base64::encode(&key);
+    let mut buf: [u8; 16] = [0u8; 16];
+    let _ = rand::getrandom(&mut buf); // ignore error
+    return base64::encode(&buf);
 }
 
 pub fn verify_key(sec_websocket_key: &str, sec_websocket_accept: &str) -> bool {

@@ -1,1 +1,1 @@
-gcc -o main main.c -L websocket/release -lwebsocket_std -ldl
+gcc -o main main.c -L websocket -lwebsocket_std
