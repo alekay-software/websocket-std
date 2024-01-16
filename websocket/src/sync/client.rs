@@ -157,7 +157,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
     pub fn init(&mut self, host: &'a str, port: u16, path: &'a str, config: Option<Config<'a, T>>) -> WebSocketResult<()> {
         
         let socket = TcpStream::connect(format!("{}:{}", host, port.to_string()));
-        if socket.is_err() { return Err(WebSocketError::SocketError(String::from("Unreachable host"))); } 
+        if socket.is_err() { return Err(WebSocketError::UnreachableHost)} 
         let sec_websocket_key = gen_key();
         
         let mut headers: HashMap<String, String> = HashMap::from([

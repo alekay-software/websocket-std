@@ -39,6 +39,7 @@ pub type WebSocketResult<T> = Result<T, WebSocketError>;
 pub enum WebSocketError {
 	/// A WebSocket protocol error
 	ProtocolError(String),
+	UnreachableHost,
 	/// Invalid WebSocket data frame error
 	DataFrameError(String),
 	// Socket error
@@ -63,6 +64,7 @@ impl fmt::Display for WebSocketError {
 	fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
 		fmt.write_str("WebSocketError: ")?;
 		match self {
+			WebSocketError::UnreachableHost => fmt.write_str("Unreachable host"),
 			WebSocketError::ProtocolError(msg) => fmt.write_str(msg.as_str()),
 			WebSocketError::DataFrameError(_) => fmt.write_str("WebSocket data frame error"),
 			WebSocketError::SocketError(msg) => fmt.write_str(msg.as_str()),

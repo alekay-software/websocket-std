@@ -6,24 +6,21 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+// TODO: Change the name of the enum that doesn't contain the error word (to not be confused if this value is an error or not)
 typedef enum { 
-    ProtocolError,
-    DataFrameError,
-    SocketError,
-    NoDataAvailable,
-    IOError,
-    Utf8Error,
-    TryFromSliceError,
-    ConnectionClose,
-    HandShakeError,
-    Other,
-} WSErrorKind;
-
-// El error que estoy recibiendo en C es un numero muy raro
-typedef struct {
-    WSErrorKind kind;
-    const char* msg;      // Not all the errors contains a msg, check null pointers 
-} WebSocketError_t;
+    WS_Ok,
+    WS_UnreachableHost,
+    WS_ProtocolError,
+    WS_DataFrameError,
+    WS_SocketError,
+    WS_NoDataAvailable,
+    WS_IOError,
+    WS_Utf8Error,
+    WS_TryFromSliceError,
+    WS_ConnectionClose,
+    WS_HandShakeError,
+    WS_Other,
+} WSStatus;
 
 typedef enum {
     WSREASON_SERVER_CLOSED,
@@ -66,7 +63,7 @@ WSSClient_t *wssclient_new(void);
 *
 *
 */
-void wssclient_init(WSSClient_t *client,
+WSStatus wssclient_init(WSSClient_t *client,
                     const char *host,
                     uint16_t port,
                     const char *path,
@@ -82,7 +79,7 @@ void wssclient_init(WSSClient_t *client,
 * The error if the websocket got it.
 *
 */
-WebSocketError_t* wssclient_loop(WSSClient_t* client);
+WSStatus wssclient_loop(WSSClient_t* client);
 
 
 /*

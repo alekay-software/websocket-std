@@ -62,34 +62,31 @@ void *handler(void *arg) {
 
     while (!finish) {
         pthread_mutex_lock(&mutex);
-        WebSocketError_t* error;
-        error = wssclient_loop(client);
-        if(error) {
-            printf("Error number: %d\n", error->kind);
+        WSStatus status = wssclient_loop(client);
+       
+        if (status != WS_Ok) { 
             finish = TRUE;
-            printf("finish: %d\n", finish);
-            sleep(10);
-            break;
-        }
-        if (error) { 
-            switch (error->kind)
+            switch (status)
             {
-            case ProtocolError:
-                printf("Protocol error\n");
-                break;
+                case WS_HandShakeError:
+                    printf("Error in HandShake\n");
+                    break;
+                case WS_ProtocolError:
+                    printf("Protocol error\n");
+                    break;
 
-            case IOError: 
-                printf("IOError\n");
-                break;
+                case WS_IOError: 
+                    printf("IOError\n");
+                    break;
 
-            case ConnectionClose:
-                printf("Connection close error: %s\n", error->msg);
-                break;
-            
-            default:
-                printf("Unknow error\n");
-                break; 
-            }
+                case WS_ConnectionClose:
+                    printf("Connection close error\n");
+                    break;
+                
+                default:
+                    printf("Unknow error\n");
+                    break; 
+                }
         }
         pthread_mutex_unlock(&mutex);
     } 
@@ -113,7 +110,19 @@ int main() {
         return 1;
     }
 
-    wssclient_init(client, "localhost", 3000, "/", ws_handler);
+    WSStatus status = wssclient_init(client, "localhost", 3000, "/", ws_handler);
+    if (status != WS_Ok) { 
+        finish = TRUE;
+        switch (status)
+        {
+        case WS_UnreachableHost:
+            printf("Unreachable host\n");
+            break;
+        
+        default:
+            break;
+        }
+    }
     // wssclient_send(client, "First msg form C");
     // while (!finish) {
     //     printf("Mensaje: ");
