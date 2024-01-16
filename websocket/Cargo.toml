@@ -17,6 +17,7 @@ keywords = ["http", "async", "api"]
 
 [lib]
 name = "websocket_std"
+crate-type = ["staticlib"]
 
 [dependencies]
 bitflags = "2.3.2"

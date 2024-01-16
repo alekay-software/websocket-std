@@ -133,7 +133,6 @@ pub struct WSClient<'a, T: Clone> {
 // TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
 impl<'a, T> WSClient<'a, T> where T: Clone {
     pub fn new() -> Self {
-        println!("WSClient's constructor");
         WSClient { 
             host: "", 
             port: 0, 
@@ -355,7 +354,6 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
     fn handle_recv_http_response(&mut self, response: Response) -> WebSocketResult<()> {
         match self.connection_status {
             ConnectionStatus::HANDSHAKE => {
-                response.print();
                 let sec_websocket_accept = response.header("Sec-WebSocket-Accept");
             
                 if sec_websocket_accept.is_none() { return Err(WebSocketError::HandShakeError(String::from("No Sec-WebSocket-Accept received from server"))) }
@@ -513,7 +511,6 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
             OPCODE::PING=> { 
                 let data = frame.get_data();
                 let pong_frame = ControlFrame::new(FLAG::FIN, OPCODE::PONG, None, data.to_vec(), true, None);
-                println!("[CLIENT]: Sending pong, data[{}]", data.len());
                 self.output_events.push_front(Event::WEBSOCKET_DATA(Box::new(pong_frame)));
             },
             OPCODE::PONG => { todo!("Not implemented handle PONG") },
@@ -527,7 +524,6 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                 match self.connection_status {
                     // Server wants to close the connection
                     ConnectionStatus::OPEN => {
-                        println!("Server wants to close the connection");
                         let status_code = WSStatus::from_bits(status_code);
 
                         let reason = &data[2..data.len()];
@@ -542,7 +538,6 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                         let close_frame = ControlFrame::new(FLAG::FIN, OPCODE::CLOSE, Some(status_code.bits()), reason.to_vec(), true, None);
                         self.output_events.push_front(Event::WEBSOCKET_DATA(Box::new(close_frame)));
 
-                        println!("[RECEIVED STATUS]: {}", status_code.bits());
                         self.connection_status = ConnectionStatus::SERVER_WANTS_TO_CLOSE;
                         
                         // TODO: Create and on close cb to handle this situation, send the status code an the reason
@@ -564,7 +559,6 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                     ConnectionStatus::HANDSHAKE => {}              // Unreachable
                     ConnectionStatus::NOT_INIT => {}               // Unreachable
                 }
-                println!("[CLIENT]: Connection close received")
             },
             _ => return Err(WebSocketError::ProtocolError(String::from("Invalid OPCODE for Control Frame")))
         }
@@ -576,7 +570,6 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
 // TODO: Refactor the code
 impl<'a, T> Drop for WSClient<'a, T> where T: Clone {
     fn drop(&mut self) {
-        println!("Dropping client");
         if self.connection_status != ConnectionStatus::NOT_INIT &&
            self.connection_status != ConnectionStatus::HANDSHAKE &&
            self.connection_status != ConnectionStatus::CLOSE &&

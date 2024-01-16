@@ -56,8 +56,6 @@ impl Serialize for Request {
 
         data.extend(END_LINE.as_bytes());
 
-        println!("Request: {}", String::from_utf8_lossy(data.as_slice()));
-
         return data;
     }
 }

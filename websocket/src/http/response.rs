@@ -34,21 +34,6 @@ impl Response {
         self.body.as_ref()
     }
 
-    pub fn print(&self) {
-        println!("-------- Response --------");
-        println!("Headers:");
-        if self.headers.is_none() { 
-            println!("--") 
-        } else {
-            let headers = self.headers.clone().unwrap();
-            for (k, v) in headers {
-                println!("\t- {}: {}", k, v);
-            }
-        }
-        let body_len = if self.body.is_some() { self.body.clone().unwrap().len() } else { 0 }; 
-        println!("Body [{body_len}]");
-        if self.body.is_none() { println!("--") } else { println!("{}", self.body.clone().unwrap()) }
-    }
 }
 
 // TODO: Parse the rest of the response

@@ -13,7 +13,7 @@ WSSClient_t *client;
 pthread_mutex_t mutex;
 int finish;
 
-void ws_handler(WSSClient_t* client, RustEvent_t* rs_event, void* data) {
+void ws_handler(WSSClient_t* client, int* rs_event, void* data) {
     WSEvent_t event = fromRustEvent(rs_event);
     printf("new event %i \n", event.event);
     if (event.event == WSEvent_CONNECT) { 
@@ -62,9 +62,34 @@ void *handler(void *arg) {
 
     while (!finish) {
         pthread_mutex_lock(&mutex);
-        if (!wssclient_loop(client)) { 
-            printf("Error in ws loop function");
-            break; 
+        WebSocketError_t* error;
+        error = wssclient_loop(client);
+        if(error) {
+            printf("Error number: %d\n", error->kind);
+            finish = TRUE;
+            printf("finish: %d\n", finish);
+            sleep(10);
+            break;
+        }
+        if (error) { 
+            switch (error->kind)
+            {
+            case ProtocolError:
+                printf("Protocol error\n");
+                break;
+
+            case IOError: 
+                printf("IOError\n");
+                break;
+
+            case ConnectionClose:
+                printf("Connection close error: %s\n", error->msg);
+                break;
+            
+            default:
+                printf("Unknow error\n");
+                break; 
+            }
         }
         pthread_mutex_unlock(&mutex);
     } 
@@ -76,7 +101,6 @@ int main() {
     pthread_t hilo;
     finish = FALSE;
     pthread_mutex_init(&mutex, NULL);
-    printf("Hello\n");
     
     client = wssclient_new();
     if ( client == NULL ) {
@@ -89,7 +113,7 @@ int main() {
         return 1;
     }
 
-    wssclient_init(client, "129.151.233.192", 3000, "/", ws_handler);
+    wssclient_init(client, "localhost", 3000, "/", ws_handler);
     // wssclient_send(client, "First msg form C");
     // while (!finish) {
     //     printf("Mensaje: ");
@@ -103,8 +127,8 @@ int main() {
     //     pthread_mutex_unlock(&mutex);
     // }
 
-    sleep(10);
-    finish = TRUE;
+    // sleep(10);
+    // finish = TRUE;
 
     pthread_join(hilo, NULL);
     wssclient_drop(client);

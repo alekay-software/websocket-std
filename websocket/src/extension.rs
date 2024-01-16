@@ -20,24 +20,6 @@ impl Parameter {
     pub fn new(name: String, args: Option<HashMap<String, Option<String>>>) -> Self {
         Parameter { name, args }
     }
-
-    pub fn print(&self) {
-        println!("Name: {}", self.name);
-        println!("--- Arguments ---");
-        match &self.args {
-            Some(arguments) => {
-                for (k, v) in arguments {
-                    let mut value = String::new();
-                    if let Some(arg_val) = v {
-                        value.push_str(arg_val);
-                        print!("");
-                    }
-                    println!("\t- {k} -> {value}");
-                }
-            }, 
-            None => println!("No arguments")
-        }
-    }
 }
 
 #[macro_export]

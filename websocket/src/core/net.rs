@@ -11,7 +11,7 @@ pub fn read_into_buffer(reader: &mut dyn Read, buf: &mut [u8]) -> WebSocketResul
         Ok(amount) => {
             // Reached end of file (error in the connection)
             if amount <= 0 {
-                return Err(WebSocketError::ConnectionClose(String::from("Reached EOF, no more bytes can be read from this reader. If the reader is a socket probably the connections with the peer was closed")));
+                return Err(WebSocketError::ConnectionClose(String::from("Reached EOF, no more bytes can be read from socket, probably because the connections with the peer was closed")));
             } else {
                 return Ok(amount);
             }
