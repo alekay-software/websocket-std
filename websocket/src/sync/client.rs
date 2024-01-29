@@ -46,6 +46,7 @@ impl<T> WSData<T> where T: Clone {
 #[repr(C)]
 enum ConnectionStatus {
     NOT_INIT,
+    START_INIT,
     HANDSHAKE, 
     OPEN,
     CLIENT_WANTS_TO_CLOSE,
@@ -121,6 +122,7 @@ pub struct WSClient<'a, T: Clone> {
     cb_data: Option<WSData<T>>,
     callback: Option<fn(&mut Self, &WSEvent, Option<WSData<T>>)>,
     protocol: Option<String>,
+    acceptable_protocols: Option<&'a [&'a str]>,
     extensions: Vec<Extension>,
     input_events: VecDeque<Event>,
     output_events: VecDeque<Event>,
@@ -146,6 +148,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
             cb_data: None,
             callback: None,
             protocol: None,
+            acceptable_protocols: None,
             extensions: Vec::new(),
             close_iters: 0,
             input_events: VecDeque::new(),
@@ -154,9 +157,22 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
         }
     }
 
-    pub fn init(&mut self, host: &'a str, port: u16, path: &'a str, config: Option<Config<'a, T>>) -> WebSocketResult<()> {
-        
-        let socket = TcpStream::connect(format!("{}:{}", host, port.to_string()));
+    pub fn init(&mut self, host: &'a str, port: u16, path: &'a str, config: Option<Config<'a, T>>) {
+        self.host = host;
+        self.port = port;
+        self.path = path; 
+
+        if let Some(conf) = config {
+            self.cb_data = conf.data;
+            self.callback = conf.callback;
+            self.acceptable_protocols = conf.protocols;
+        }
+
+        self.connection_status = ConnectionStatus::START_INIT;
+    }
+
+    fn start_init(&mut self) -> WebSocketResult<()> {
+        let socket = TcpStream::connect(format!("{}:{}", self.host, self.port.to_string()));
         if socket.is_err() { return Err(WebSocketError::UnreachableHost)} 
         let sec_websocket_key = gen_key();
         
@@ -168,17 +184,9 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
             (String::from("User-agent"), String::from("rust-websocket-std")),
         ]);
 
-        let mut protocols = None;
-
-        if let Some(conf) = config {
-            self.cb_data = conf.data;
-            self.callback = conf.callback;
-            protocols = conf.protocols;
-        }
-
         // Add protocols to request
         let mut protocols_value = String::new();
-        if let Some(protocols) = protocols {
+        if let Some(protocols) = self.acceptable_protocols {
             for p in protocols {
                 protocols_value.push_str(p);
                 protocols_value.push_str(", ");
@@ -186,7 +194,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
             headers.insert(String::from("Sec-WebSocket-Protocol"), (&(protocols_value)[0..protocols_value.len()-2]).to_string());
         }
         
-        let request = Request::new(Method::GET, path, "HTTP/1.1", Some(headers));
+        let request = Request::new(Method::GET, self.path, "HTTP/1.1", Some(headers));
         
         self.output_events.push_front(Event::HTTP_REQUEST(request)); // Push front, because the client could execute send before init (store the frames to send to do it later)
         self.websocket_key = sec_websocket_key;
@@ -222,7 +230,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
             match self.connection_status {
                 ConnectionStatus::CLOSE => {
                     if self.close_iters > 1 {
-                        return Err(WebSocketError::ConnectionClose(String::from("Connection closed")));
+                        return Err(WebSocketError::ConnectionClose);
                     } else {
                         return Ok(());
                     }
@@ -251,7 +259,8 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
 
     pub fn event_loop(&mut self) -> WebSocketResult<()> {
         if self.connection_status == ConnectionStatus::NOT_INIT { return Ok(()) }
-        if self.connection_status == ConnectionStatus::CLOSE { return Err(WebSocketError::ConnectionClose(String::from("Connection is closed"))) }
+        if self.connection_status == ConnectionStatus::START_INIT { return self.start_init()}
+        if self.connection_status == ConnectionStatus::CLOSE { return Err(WebSocketError::ConnectionClose) }
     
         let event = self.read_bytes_from_socket()?;
         self.insert_input_event(event);
@@ -302,7 +311,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                     let callback = self.callback.unwrap();
 
                     let res = String::from_utf8(frame.get_data().to_vec());
-                    if res.is_err() { return Err(WebSocketError::Utf8Error(res.err().unwrap().utf8_error())); }
+                    if res.is_err() { return Err(WebSocketError::DecodingFromUTF8) }
                     
                     let msg = res.unwrap();
 
@@ -314,7 +323,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                     } else {
                         let previous_data = self.recv_data.clone();
                         let res = String::from_utf8(previous_data);
-                        if res.is_err() { return Err(WebSocketError::Utf8Error(res.err().unwrap().utf8_error())); }
+                        if res.is_err() { return Err(WebSocketError::DecodingFromUTF8); }
                         
                         let mut completed_msg = res.unwrap();
                         completed_msg.push_str(msg.as_str());
@@ -335,7 +344,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                 return Ok(());
             },
             FrameKind::Control => { return self.handle_control_frame(frame.as_any().downcast_ref::<ControlFrame>().unwrap()); },
-            FrameKind::NotDefine => return Err(WebSocketError::ProtocolError(String::from("OPCODE not supported")))
+            FrameKind::NotDefine => return Err(WebSocketError::InvalidFrame)
         }; 
     }
 
@@ -356,18 +365,18 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
             ConnectionStatus::HANDSHAKE => {
                 let sec_websocket_accept = response.header("Sec-WebSocket-Accept");
             
-                if sec_websocket_accept.is_none() { return Err(WebSocketError::HandShakeError(String::from("No Sec-WebSocket-Accept received from server"))) }
+                if sec_websocket_accept.is_none() { return Err(WebSocketError::HandShake) }
                 let sec_websocket_accept = sec_websocket_accept.unwrap();
             
                 // Verify Sec-WebSocket-Accept
                 let accepted = verify_key(&self.websocket_key, &sec_websocket_accept);
                 if !accepted {
-                    return Err(WebSocketError::HandShakeError(String::from("Invalid 'Sec-WebSocket-Accept'")));
+                    return Err(WebSocketError::HandShake);
                 }
             
                 if response.get_status_code() == 0 || 
                    response.get_status_code() != SWITCHING_PROTOCOLS { 
-                    return Err(WebSocketError::HandShakeError(format!("HandShake Error: Server refused to upgrade connection to websockets"))) 
+                    return Err(WebSocketError::HandShake) 
                 }
 
                 self.protocol = response.header("Sec-WebSocket-Protocol");
@@ -469,6 +478,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
 
                 ConnectionStatus::CLOSE => {}, // Unreachable
                 ConnectionStatus::NOT_INIT => {}, // Unreachable
+                ConnectionStatus::START_INIT => {} // Unreachable
             };
         }
         Ok(event) 
@@ -500,7 +510,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                 return Ok(false);
 
             } else {
-                return Err(WebSocketError::IOError(error));
+                return Err(WebSocketError::IOError);
             }
         }
         Ok(true)
@@ -558,9 +568,10 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
                     ConnectionStatus::CLOSE => {}                  // Unreachable
                     ConnectionStatus::HANDSHAKE => {}              // Unreachable
                     ConnectionStatus::NOT_INIT => {}               // Unreachable
+                    ConnectionStatus::START_INIT => {}             // Unreachable
                 }
             },
-            _ => return Err(WebSocketError::ProtocolError(String::from("Invalid OPCODE for Control Frame")))
+            _ => return Err(WebSocketError::InvalidFrame)
         }
 
         Ok(())
@@ -571,39 +582,39 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
 impl<'a, T> Drop for WSClient<'a, T> where T: Clone {
     fn drop(&mut self) {
         if self.connection_status != ConnectionStatus::NOT_INIT &&
-           self.connection_status != ConnectionStatus::HANDSHAKE &&
-           self.connection_status != ConnectionStatus::CLOSE &&
-           self.stream.is_some() {
+            self.connection_status != ConnectionStatus::HANDSHAKE &&
+            self.connection_status != ConnectionStatus::CLOSE &&
+            self.stream.is_some() {
 
-               let msg = "Done";
-               let status_code: u16 = 1000;
-               let close_frame = ControlFrame::new(FLAG::FIN, OPCODE::CLOSE, Some(status_code), msg.as_bytes().to_vec(), true, None);
-       
-               // Add close frame at the end of the queue.
-               // Clear both queues
-               self.output_events.clear();
-               self.input_events.clear();
-               self.output_events.push_back(Event::WEBSOCKET_DATA(Box::new(close_frame)));
-               self.connection_status = ConnectionStatus::CLIENT_WANTS_TO_CLOSE;
-       
-               let timeout = Instant::now();
+                let msg = "Done";
+                let status_code: u16 = 1000;
+                let close_frame = ControlFrame::new(FLAG::FIN, OPCODE::CLOSE, Some(status_code), msg.as_bytes().to_vec(), true, None);
         
-               // Process a response for all the events and confirm that the connection was closed.
-               while self.connection_status != ConnectionStatus::CLOSE {
-                   if timeout.elapsed().as_secs() >= self.timeout.as_secs() { break } // Close handshake timeout.
-                   let result = self.event_loop();
-                   if result.is_ok() { continue }
-                   let err = result.err().unwrap();
-       
-                   match err {
-                       WebSocketError::SocketError(_) => { break }, // If get an error with the socket, terminate the close handshake.
-                       _ => { continue }
-                   }
-       
-               }
-               let _ = self.stream.as_mut().unwrap().shutdown(Shutdown::Both); // Ignore result from shutdown method.
+                // Add close frame at the end of the queue.
+                // Clear both queues
+                self.output_events.clear();
+                self.input_events.clear();
+                self.output_events.push_back(Event::WEBSOCKET_DATA(Box::new(close_frame)));
+                self.connection_status = ConnectionStatus::CLIENT_WANTS_TO_CLOSE;
+        
+                let timeout = Instant::now();
+        
+                // Process a response for all the events and confirm that the connection was closed.
+                while self.connection_status != ConnectionStatus::CLOSE {
+                    if timeout.elapsed().as_secs() >= self.timeout.as_secs() { break } // Close handshake timeout.
+                    let result = self.event_loop();
+                    if result.is_ok() { continue }
+                    let err = result.err().unwrap();
+
+                    // TODO: Decide what to do if an error ocurred while consuming the rest of the messages
+                    match err {
+                        _ => { break }
+                    }
+        
+                    }
+                let _ = self.stream.as_mut().unwrap().shutdown(Shutdown::Both); // Ignore result from shutdown method.
+            }
         }
-    }
 }
 
 unsafe impl<'a, T> Send for WSClient<'a, T> where T: Clone {}

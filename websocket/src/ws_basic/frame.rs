@@ -159,7 +159,7 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
     if flag.is_none() { 
         let mut msg = String::from("Invalid flag: ");
         msg.push_str(bytes[0].to_string().as_str());
-        return Err(WebSocketError::ProtocolError(msg));
+        return Err(WebSocketError::InvalidFrame);
     }
 
     
@@ -168,7 +168,7 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
     if  code.is_none() { 
         let mut msg = String::from("Invalid opcode: ");
         msg.push_str(bytes[1].to_string().as_str());
-        return Err(WebSocketError::ProtocolError(msg));
+        return Err(WebSocketError::InvalidFrame);
     }
     
     let is_masked = (0b10000000 & bytes[1]) == 1;
@@ -222,10 +222,11 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
 
 
 // TODO: Pass buffer to this function
-pub fn read_frame(reader: &mut dyn Read, storage: &mut Vec<u8>) -> WebSocketResult<Option<Box<dyn Frame>>> {
+pub fn read_frame<'a>(reader: &mut dyn Read, storage: &'a mut Vec<u8>) -> WebSocketResult<'a, Option<Box<dyn Frame>>> {
 
     // Try to get a frame from previous bytes readed from the socket
-    if storage.len() > 0 { 
+    let len = storage.len();
+    if len > 0 { 
         let res = bytes_to_frame(storage.as_slice())?;
     
         if res.is_some() { 

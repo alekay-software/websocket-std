@@ -8,18 +8,13 @@
 
 // TODO: Change the name of the enum that doesn't contain the error word (to not be confused if this value is an error or not)
 typedef enum { 
-    WS_Ok,
-    WS_UnreachableHost,
-    WS_ProtocolError,
-    WS_DataFrameError,
-    WS_SocketError,
-    WS_NoDataAvailable,
-    WS_IOError,
-    WS_Utf8Error,
-    WS_TryFromSliceError,
-    WS_ConnectionClose,
-    WS_HandShakeError,
-    WS_Other,
+    WSStatusOK,
+    WSStatusUnreachableHost,
+    WSStatusHandShakeError,
+    WSStatusInvalidFrame,
+    WSStatusConnectionCloseError,
+    WSStatusDecodingFromUTF8Error,
+    WSStatusIOError, 
 } WSStatus;
 
 typedef enum {
@@ -63,7 +58,7 @@ WSSClient_t *wssclient_new(void);
 *
 *
 */
-WSStatus wssclient_init(WSSClient_t *client,
+void wssclient_init(WSSClient_t *client,
                     const char *host,
                     uint16_t port,
                     const char *path,

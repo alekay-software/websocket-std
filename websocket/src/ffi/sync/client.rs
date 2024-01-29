@@ -35,34 +35,23 @@ struct WSReason_t {
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub enum WSStatus { 
-    Ok,
+    OK,
     UnreachableHost,
-    ProtocolError,
-    DataFrameError,
-    SocketError,
-    NoDataAvailable,
-    IOError,
-    Utf8Error,
-    TryFromSliceError,
+    HandShake,
+    InvalidFrame,
     ConnectionClose,
-    HandShakeError,
-    Other,
+    DecodingFromUTF8,
+    IOError,
 }
-
 
 fn rust_error_to_c_error(error: WebSocketError) -> WSStatus {
     match error {
         WebSocketError::UnreachableHost => WSStatus::UnreachableHost,
-        WebSocketError::ProtocolError(_) => WSStatus::ProtocolError,
-        WebSocketError::DataFrameError(_) => WSStatus::DataFrameError,
-        WebSocketError::SocketError(_) => WSStatus::SocketError,
-        WebSocketError::NoDataAvailable => WSStatus::NoDataAvailable,
-        WebSocketError::IOError(_) => WSStatus::IOError,
-        WebSocketError::Utf8Error(_) => WSStatus::Utf8Error,
-        WebSocketError::TryFromSliceError(_)  => WSStatus::TryFromSliceError,
-        WebSocketError::ConnectionClose(_) => WSStatus::ConnectionClose,
-        WebSocketError::HandShakeError(_) => WSStatus::HandShakeError,
-        WebSocketError::Other(_) => WSStatus::Other,
+        WebSocketError::HandShake => WSStatus::HandShake,
+        WebSocketError::InvalidFrame => WSStatus::InvalidFrame,
+        WebSocketError::ConnectionClose => WSStatus::ConnectionClose,
+        WebSocketError::DecodingFromUTF8 => WSStatus::DecodingFromUTF8,
+        WebSocketError::IOError => WSStatus::IOError
     }
 }
 
@@ -95,7 +84,7 @@ unsafe extern "C" fn wssclient_init<'a> (
     port: u16,
     path: *const c_char,
     callback: *mut c_void,
-) -> WSStatus {
+) {
     let host = str::from_utf8(CStr::from_ptr(host).to_bytes()).unwrap();
     let path = str::from_utf8(CStr::from_ptr(path).to_bytes()).unwrap();
 
@@ -104,16 +93,12 @@ unsafe extern "C" fn wssclient_init<'a> (
     
     let client = &mut *client;
 
-    match client.init(host, port, path, Some(config)) {
-        Ok(_) => WSStatus::Ok,
-        Err(e) => rust_error_to_c_error(e)
-    }
+    client.init(host, port, path, Some(config));
 }
 
 #[no_mangle]
 unsafe extern "C" fn wssclient_loop<'a>(client: *mut WSClient<'a, *mut c_void>) -> WSStatus {
     let client = &mut *client;
-    let status = WSStatus::Ok;
 
     match client.event_loop() {
         Ok(_) => {}
@@ -122,7 +107,7 @@ unsafe extern "C" fn wssclient_loop<'a>(client: *mut WSClient<'a, *mut c_void>) 
         } 
     }
 
-    return status;
+    WSStatus::OK
 }
 
 #[no_mangle]

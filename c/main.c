@@ -64,23 +64,31 @@ void *handler(void *arg) {
         pthread_mutex_lock(&mutex);
         WSStatus status = wssclient_loop(client);
        
-        if (status != WS_Ok) { 
+        if (status != WSStatusOK) { 
             finish = TRUE;
             switch (status)
             {
-                case WS_HandShakeError:
+                case WSStatusHandShakeError:
                     printf("Error in HandShake\n");
                     break;
-                case WS_ProtocolError:
-                    printf("Protocol error\n");
+                case WSStatusUnreachableHost:
+                    printf("UnreachableHost\n");
                     break;
 
-                case WS_IOError: 
+                case WSStatusIOError: 
                     printf("IOError\n");
                     break;
 
-                case WS_ConnectionClose:
+                case WSStatusConnectionCloseError:
                     printf("Connection close error\n");
+                    break;
+                
+                case WSStatusDecodingFromUTF8Error:
+                    printf("Error decoding frame from utf8\n");
+                    break;
+
+                case WSStatusInvalidFrame:
+                    printf("Invalid frame received\n");
                     break;
                 
                 default:
@@ -110,19 +118,7 @@ int main() {
         return 1;
     }
 
-    WSStatus status = wssclient_init(client, "localhost", 3000, "/", ws_handler);
-    if (status != WS_Ok) { 
-        finish = TRUE;
-        switch (status)
-        {
-        case WS_UnreachableHost:
-            printf("Unreachable host\n");
-            break;
-        
-        default:
-            break;
-        }
-    }
+    wssclient_init(client, "localhost", 3000, "/", ws_handler);
     // wssclient_send(client, "First msg form C");
     // while (!finish) {
     //     printf("Mensaje: ");
