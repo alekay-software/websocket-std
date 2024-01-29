@@ -97,7 +97,7 @@ fn main() -> WebSocketResult<()> {
 
     c1.set_message_size(1024);
     c1.send("Message before the init handshake")?;
-    c1.init(host, port, path, Some(config))?;
+    c1.init(host, port, path, Some(config));
 
     let start = Instant::now();
     data.borrow_mut().start = start;
