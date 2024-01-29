@@ -8,6 +8,7 @@ use std::ptr;
 use std::str;
 
 #[repr(C)]
+#[allow(non_camel_case_types)]
 enum WSEvent {
     ON_CONNECT,
     ON_TEXT,
@@ -15,18 +16,21 @@ enum WSEvent {
 }
 
 #[repr(C)]
+#[allow(non_camel_case_types)]
 struct WSEvent_t {
     event: WSEvent,
     value: *const c_void
 }
 
 #[repr(C)]
+#[allow(non_camel_case_types)]
 enum WSReason {
     SERVER_CLOSED,
     CLIENT_CLOSED
 }
 
 #[repr(C)]
+#[allow(non_camel_case_types)]
 struct WSReason_t {
     reason: WSReason,
     status: u16
