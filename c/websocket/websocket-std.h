@@ -27,18 +27,22 @@ typedef struct {
     uint16_t status;
 } WSReason_t;
 
-typedef enum { 
+typedef const void* RustEvent;
+
+typedef enum WSEventKind { 
     WSEvent_CONNECT,
     WSEvent_TEXT,
     WSEvent_CLOSE,
-} WSEvent;
+} WSEventKind_t;
 
-typedef struct {
-    WSEvent event;
+typedef struct WSEvent {
+    WSEventKind_t kind;
     void* value; 
 } WSEvent_t;
 
 typedef struct {} WSSClient_t;
+
+typedef void (*ws_handler_t)(WSSClient_t*, RustEvent, void*);
 
 /*
 * Creates a new WSSClient_t or NULL if an error occurred
@@ -62,7 +66,7 @@ void wssclient_init(WSSClient_t *client,
                     const char *host,
                     uint16_t port,
                     const char *path,
-                    void* callback);               
+                    ws_handler_t callback);               
 
 /*
 * Function to execute the internal event loop of the websocket 
@@ -100,6 +104,6 @@ int wssclient_send(WSSClient_t* client, const char* message);
 */
 void wssclient_drop(WSSClient_t* client);
 
-WSEvent_t fromRustEvent(int* event);
+WSEvent_t from_rust_event(RustEvent event);
 
 #endif

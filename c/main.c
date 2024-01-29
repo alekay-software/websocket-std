@@ -13,10 +13,10 @@ WSSClient_t *client;
 pthread_mutex_t mutex;
 int finish;
 
-void ws_handler(WSSClient_t* client, int* rs_event, void* data) {
-    WSEvent_t event = fromRustEvent(rs_event);
-    printf("new event %i \n", event.event);
-    if (event.event == WSEvent_CONNECT) { 
+void ws_handler(WSSClient_t* client, RustEvent rs_event, void* data) {
+    WSEvent_t event = from_rust_event(rs_event);
+    printf("new event %i \n", event.kind);
+    if (event.kind == WSEvent_CONNECT) { 
         printf("Connected\n");
         if (event.value != NULL) {
             char* msg = (char*) event.value;
@@ -26,7 +26,8 @@ void ws_handler(WSSClient_t* client, int* rs_event, void* data) {
             }
             printf("Message received on connected: %s\n", msg);
         }
-    } else if (event.event == WSEvent_CLOSE) {
+        wssclient_send(client, "Hola me gusta ganar con mi websocket");
+    } else if (event.kind == WSEvent_CLOSE) {
         WSReason_t* ws_reason = (WSReason_t*) event.value;
 
         switch (ws_reason->reason)
@@ -42,7 +43,7 @@ void ws_handler(WSSClient_t* client, int* rs_event, void* data) {
         }
      
         finish = TRUE;
-    } else if (event.event == WSEvent_TEXT) {
+    } else if (event.kind == WSEvent_TEXT) {
         const char* message = (char*) event.value;
         printf("TEXT (%zu): %s\n", strlen(message), message);
         // wssclient_send(client, "Hello from C response");

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use super::commons::END_LINE;
 use super::super::core::traits::{Parse, ParseError};
-use std::char::REPLACEMENT_CHARACTER;
 
 #[allow(dead_code)]
 pub struct Response {
@@ -14,7 +13,7 @@ pub struct Response {
 
 impl Response {
     pub fn new(version: String, status_code: u16, status_text: String, headers: Option<HashMap<String, String>>, body: Option<String>) -> Self {
-        Response {version, status_code, headers, status_text, body }
+        Response { version, status_code, headers, status_text, body }
     }
 
     pub fn get_status_code(&self) -> u16 {
