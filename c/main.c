@@ -9,9 +9,9 @@
 #define FALSE 0
 #define TRUE 1 
 
-WSSClient_t *client;
 pthread_mutex_t mutex;
 int finish;
+int total = 0;
 
 void ws_handler(WSSClient_t* client, RustEvent rs_event, void* data) {
     WSEvent_t event = from_rust_event(rs_event);
@@ -20,13 +20,8 @@ void ws_handler(WSSClient_t* client, RustEvent rs_event, void* data) {
         printf("Connected\n");
         if (event.value != NULL) {
             char* msg = (char*) event.value;
-            for(int i = 0; i < strlen(msg); i++) {
-                printf("%c\n", *msg);
-                msg++;
-            }
             printf("Message received on connected: %s\n", msg);
         }
-        wssclient_send(client, "Hola me gusta ganar con mi websocket");
     } else if (event.kind == WSEvent_CLOSE) {
         WSReason_t* ws_reason = (WSReason_t*) event.value;
 
@@ -44,6 +39,7 @@ void ws_handler(WSSClient_t* client, RustEvent rs_event, void* data) {
      
         finish = TRUE;
     } else if (event.kind == WSEvent_TEXT) {
+        total += 1;
         const char* message = (char*) event.value;
         printf("TEXT (%zu): %s\n", strlen(message), message);
         // wssclient_send(client, "Hello from C response");
@@ -53,16 +49,18 @@ void ws_handler(WSSClient_t* client, RustEvent rs_event, void* data) {
 
 // Función que será ejecutada por el hilo
 void *handler(void *arg) {
+    WSSClient_t *client = (WSSClient_t*) arg;
 
-    // for(int i = 0; i < 1000; i++) {
-    //     wssclient_send(client, "Hello from C");
-    // }
+    printf("Creo que va a ganar esto\n");
+    for(int i = 0; i < 1000; i++) {
+        wssclient_send(client, "Hello from C");
+    }
 
     // printf("Se han enviado los mensajese en 10 segunos se recibiran todas las respuestas\n");
     // sleep(10);
 
     while (!finish) {
-        pthread_mutex_lock(&mutex);
+        // pthread_mutex_lock(&mutex);
         WSStatus status = wssclient_loop(client);
        
         if (status != WSStatusOK) { 
@@ -97,29 +95,37 @@ void *handler(void *arg) {
                     break; 
                 }
         }
-        pthread_mutex_unlock(&mutex);
+        // pthread_mutex_unlock(&mutex);
     } 
     return NULL;
 }
 
 int main() {
     char cadena[100];
-    pthread_t hilo;
+    pthread_t h1, h2;
     finish = FALSE;
     pthread_mutex_init(&mutex, NULL);
-    
-    client = wssclient_new();
-    if ( client == NULL ) {
+    WSSClient_t *c1, *c2;
+
+    c1 = wssclient_new();
+    c2 = wssclient_new();
+    if ( c1 == NULL || c2 == NULL ) {
         printf("Buy more ram\n");
         return 1; 
     }
 
-    if (pthread_create(&hilo, NULL, handler, NULL) != 0) {
+    if (pthread_create(&h1, NULL, handler, c1) != 0) {
         fprintf(stderr, "Error al crear el hilo\n");
         return 1;
     }
 
-    wssclient_init(client, "localhost", 3000, "/", ws_handler);
+    if (pthread_create(&h2, NULL, handler, c2) != 0) {
+        fprintf(stderr, "Error al crear el hilo\n");
+        return 1;
+    }
+
+    wssclient_init(c1, "localhost", 3000, "/", ws_handler);
+    wssclient_init(c2, "localhost", 3000, "/", ws_handler);
     // wssclient_send(client, "First msg form C");
     // while (!finish) {
     //     printf("Mensaje: ");
@@ -136,8 +142,11 @@ int main() {
     // sleep(10);
     // finish = TRUE;
 
-    pthread_join(hilo, NULL);
-    wssclient_drop(client);
+    pthread_join(h1, NULL);
+    pthread_join(h2, NULL);
+    wssclient_drop(c1);
+    wssclient_drop(c2);
+    printf("Total %d: \n", total);
 
     return 0;
 }
