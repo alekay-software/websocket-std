@@ -1,6 +1,6 @@
 use std::borrow::BorrowMut;
 use std::net::{TcpListener, TcpStream};
-use websocket_std::client::{SyncClient, Config, Reason};
+use websocket_std::sync::client::{Config, Reason, WSData};
 use websocket_std::result::{WebSocketError, WebSocketResult};
 use std::thread;
 use std::time::Duration;
@@ -152,6 +152,7 @@ fn connection_success_no_close_handshake() {
     }
 
     let mut data = Arc::new(RefCell::new(Data { connected: false }));
+    let wsData: WSData<>
 
     let config: Config<RefCell<Data>> = Config { 
         on_close: Some(on_close), 

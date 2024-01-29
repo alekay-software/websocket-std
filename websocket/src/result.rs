@@ -2,7 +2,7 @@ use std::fmt;
 use std;
 
 // Define type for WebSocketStdResult
-pub type WebSocketResult<'a, T> = Result<T, WebSocketError>;
+pub type WebSocketResult<T> = Result<T, WebSocketError>;
 
 // Represents a WebSocket error
 #[derive(Debug)]

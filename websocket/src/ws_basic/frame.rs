@@ -222,7 +222,7 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
 
 
 // TODO: Pass buffer to this function
-pub fn read_frame<'a>(reader: &mut dyn Read, storage: &'a mut Vec<u8>) -> WebSocketResult<'a, Option<Box<dyn Frame>>> {
+pub fn read_frame<'a>(reader: &mut dyn Read, storage: &'a mut Vec<u8>) -> WebSocketResult<Option<Box<dyn Frame>>> {
 
     // Try to get a frame from previous bytes readed from the socket
     let len = storage.len();
