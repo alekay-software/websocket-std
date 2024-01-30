@@ -81,4 +81,4 @@ fn main() -> WebSocketResult<()> {
 
 ```
 
-### Rust websocket-std client Apple Mac M1
+### Rust websocket-std client Mac M1
