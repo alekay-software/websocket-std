@@ -1,0 +1,1 @@
+clang thread.c -o thread && ./thread
