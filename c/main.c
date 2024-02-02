@@ -5,12 +5,12 @@
 #include <pthread.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define FALSE 0
 #define TRUE 1 
 
-pthread_mutex_t mutex;
-int finish;
+// pthread_mutex_t mutex;
 int total = 0;
 
 void ws_handler(WSSClient_t* client, RustEvent rs_event, void* data) {
@@ -36,12 +36,13 @@ void ws_handler(WSSClient_t* client, RustEvent rs_event, void* data) {
         default:
             break;
         }
-     
-        finish = TRUE;
     } else if (event.kind == WSEvent_TEXT) {
-        total += 1;
+        double sleep_time = (double)rand() / RAND_MAX;
+        sleep(sleep_time);
+        int aux = total; 
+        total = aux + 1; 
         const char* message = (char*) event.value;
-        printf("TEXT (%zu): %s\n", strlen(message), message);
+        // printf("TEXT (%zu): %s\n", strlen(message), message);
         // wssclient_send(client, "Hello from C response");
     }
 
@@ -51,7 +52,6 @@ void ws_handler(WSSClient_t* client, RustEvent rs_event, void* data) {
 void *handler(void *arg) {
     WSSClient_t *client = (WSSClient_t*) arg;
 
-    printf("Creo que va a ganar esto\n");
     for(int i = 0; i < 1000; i++) {
         wssclient_send(client, "Hello from C");
     }
@@ -59,12 +59,16 @@ void *handler(void *arg) {
     // printf("Se han enviado los mensajese en 10 segunos se recibiran todas las respuestas\n");
     // sleep(10);
 
-    while (!finish) {
+    time_t start, end;
+    time(&start);
+
+    while (TRUE) {
+        time(&end);
+        if (difftime(end, start) >= 10) { break; }
         // pthread_mutex_lock(&mutex);
         WSStatus status = wssclient_loop(client);
        
         if (status != WSStatusOK) { 
-            finish = TRUE;
             switch (status)
             {
                 case WSStatusHandShakeError:
@@ -94,6 +98,7 @@ void *handler(void *arg) {
                     printf("Unknow error\n");
                     break; 
                 }
+            break;
         }
         // pthread_mutex_unlock(&mutex);
     } 
@@ -103,8 +108,7 @@ void *handler(void *arg) {
 int main() {
     char cadena[100];
     pthread_t h1, h2;
-    finish = FALSE;
-    pthread_mutex_init(&mutex, NULL);
+    // pthread_mutex_init(&mutex, NULL);
     WSSClient_t *c1, *c2;
 
     c1 = wssclient_new();

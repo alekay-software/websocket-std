@@ -1,1 +1,3 @@
-gcc -o main main.c -L websocket -lwebsocket_std
+# Build project
+cd ..
+cargo build
