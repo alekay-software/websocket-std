@@ -23,24 +23,6 @@ const DEFAULT_MESSAGE_SIZE: u64 = 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const SWITCHING_PROTOCOLS: u16 = 101;
 
-#[derive(Clone)]
-pub struct WSData<T: Clone>(Arc<RefCell<T>>);
-
-impl<T> WSData<T> where T: Clone {
-    pub fn new(data: T) -> Self {
-        WSData(Arc::new(RefCell::new(data)))
-    }
-
-    pub fn borrow_mut(&mut self) -> RefMut<'_, T> {
-       self.0.borrow_mut() 
-    }
-
-    pub fn borrow(&self) -> Ref<'_, T> {
-        self.0.borrow()
-    }
-}
-
-
 #[allow(non_camel_case_types)]
 #[derive(PartialEq)]
 #[repr(C)]
@@ -76,9 +58,10 @@ enum EventIO {
     OUTPUT
 }
 
+#[derive(Clone)]
 pub struct Config<'a, T: Clone> {
-    pub callback: Option<fn(&mut WSClient<'a, T>, &WSEvent, Option<WSData<T>>)>,
-    pub data: Option<WSData<T>>,
+    pub callback: Option<fn(&mut WSClient<'a, T>, &WSEvent, Option<T>)>,
+    pub data: Option<T>,
     pub protocols: Option<&'a[&'a str]>,
 }
 
@@ -119,8 +102,8 @@ pub struct WSClient<'a, T: Clone> {
     stream: Option<TcpStream>,
     recv_storage: Vec<u8>,                                   // Storage to keep the bytes received from the socket (bytes that didn't use to create a frame)
     recv_data: Vec<u8>,                                      // Store the data received from the Frames until the data is completelly received
-    cb_data: Option<WSData<T>>,
-    callback: Option<fn(&mut Self, &WSEvent, Option<WSData<T>>)>,
+    cb_data: Option<T>,
+    callback: Option<fn(&mut Self, &WSEvent, Option<T>)>,
     protocol: Option<String>,
     acceptable_protocols: Option<&'a [&'a str]>,
     extensions: Vec<Extension>,
@@ -222,23 +205,9 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
     }
 
     // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
-    pub fn send(&mut self, payload: &str) -> WebSocketResult<()> {
-        // Connection was closed
-
-        if self.connection_status == ConnectionStatus::CLOSE {
-            self.close_iters += 1;
-            match self.connection_status {
-                ConnectionStatus::CLOSE => {
-                    if self.close_iters > 1 {
-                        return Err(WebSocketError::ConnectionClose);
-                    } else {
-                        return Ok(());
-                    }
-                }
-                _ => return Ok(())
-            };
-        }
-
+    pub fn send(&mut self, payload: &str) {
+        // If connection is close do nothing
+        if self.connection_status == ConnectionStatus::CLOSE { return }
         let mut data_sent = 0;
         let mut _i: usize = 0;
 
@@ -252,9 +221,6 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
             self.output_events.push_back(Event::WEBSOCKET_DATA(Box::new(frame)));
             data_sent += self.message_size as usize;
         }
-
-        Ok(())
-
     }
 
     pub fn event_loop(&mut self) -> WebSocketResult<()> {

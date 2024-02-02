@@ -1,5 +1,5 @@
-use super::super::super::sync::client::{Config, WSEvent as RWSEvent, WSData, WSClient};
-use std::ffi::{c_void, c_char, CStr, c_int};
+use super::super::super::sync::client::{Config, WSEvent as RWSEvent, WSClient};
+use std::ffi::{c_void, c_char, CStr};
 use std::alloc::{alloc, Layout};
 use std::mem;
 use std::ptr;
@@ -39,7 +39,7 @@ unsafe extern "C" fn wssclient_init<'a> (
     let host = str::from_utf8(CStr::from_ptr(host).to_bytes()).unwrap();
     let path = str::from_utf8(CStr::from_ptr(path).to_bytes()).unwrap();
 
-    let callback: fn(&mut WSClient<'a, *mut c_void>, &RWSEvent, Option<WSData<*mut c_void>>) = mem::transmute(callback);
+    let callback: fn(&mut WSClient<'a, *mut c_void>, &RWSEvent, Option<*mut c_void>) = mem::transmute(callback);
     let config = Config { callback: Some(callback), data: None, protocols: None };
     
     let client = &mut *client;
@@ -62,20 +62,10 @@ unsafe extern "C" fn wssclient_loop<'a>(client: *mut WSClient<'a, *mut c_void>) 
 }
 
 #[no_mangle]
-unsafe extern "C" fn wssclient_send<'a>(client: *mut WSClient<'a, *mut c_void>, message: *const c_char) -> c_int {
-    let mut status = 1;
+unsafe extern "C" fn wssclient_send<'a>(client: *mut WSClient<'a, *mut c_void>, message: *const c_char) {
     let msg = str::from_utf8(CStr::from_ptr(message).to_bytes()).unwrap();
-
     let client = &mut *client;
-    match client.send(msg) {
-        Ok(_) => {}
-        Err(e) => {
-            println!("Error {}", e);
-            status = 0
-        }
-    }
-
-    return status;
+    client.send(msg);
 }
 
 #[no_mangle]

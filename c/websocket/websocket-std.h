@@ -92,7 +92,7 @@ WSStatus wssclient_loop(WSSClient_t* client);
 * The error if the websocket got it.
 *
 */
-int wssclient_send(WSSClient_t* client, const char* message);
+void wssclient_send(WSSClient_t* client, const char* message);
 
 
 /*
