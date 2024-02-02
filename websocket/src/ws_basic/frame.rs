@@ -3,8 +3,6 @@ use crate::result::{WebSocketResult, WebSocketError};
 use super::{header::{Header, FLAG, OPCODE}, mask::{Mask, gen_mask}};
 use super::super::core::traits::Serialize;
 use super::super::core::binary::{bytes_to_u16, bytes_to_u64};
-use std::io::Read;
-use super::super::core::net::read_into_buffer;
 
 #[derive(PartialEq)]
 pub enum FrameKind {
@@ -218,45 +216,4 @@ pub fn bytes_to_frame(bytes: &[u8]) -> WebSocketResult<Option<(Box<dyn Frame>, u
     }
 
     // if bytes.len() == 0 { break } // Al frames readed
-}
-
-
-// TODO: Pass buffer to this function
-pub fn read_frame<'a>(reader: &mut dyn Read, storage: &'a mut Vec<u8>) -> WebSocketResult<Option<Box<dyn Frame>>> {
-
-    // Try to get a frame from previous bytes readed from the socket
-    let len = storage.len();
-    if len > 0 { 
-        let res = bytes_to_frame(storage.as_slice())?;
-    
-        if res.is_some() { 
-            let (frame, offset) = res.unwrap();
-            storage.drain(0..offset);
-            return Ok(Some(frame)); 
-        }
-    }
-
-    // Read from socket
-    // TODO: Pass this buffer from the user to control the perfomance
-    let mut buf: [u8; 1024] = [0; 1024];
-
-    // use net function to put data into the buffer and try to create a socket with the data in the storage and the data readed
-    // If a frame is created, the rest of the data readed from the socket must be save into the storage vector
-    let res = read_into_buffer(reader, &mut buf);
-    if res.is_err() { return Err(res.unwrap_err()); }
-
-    let amount = res.unwrap();
-    if amount <= 0 { return Ok(None); }
-
-    storage.extend_from_slice(&buf[0..amount]);
-    let res = bytes_to_frame(storage.as_slice())?;
-
-    if res.is_some() { 
-        let (frame, offset) = res.unwrap();
-        storage.drain(0..offset);
-        return Ok(Some(frame)); 
-    }
-
-    return Ok(None);
-
 }
