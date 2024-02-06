@@ -5,7 +5,7 @@ use std;
 pub type WebSocketResult<T> = Result<T, WebSocketError>;
 
 // Represents a WebSocket error
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum WebSocketError {
     UnreachableHost,
     HandShake,

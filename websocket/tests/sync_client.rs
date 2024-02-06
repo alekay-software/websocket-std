@@ -1,15 +1,17 @@
-use std::borrow::BorrowMut;
 use std::net::{TcpListener, TcpStream};
-use websocket_std::sync::client::{Config, Reason, WSData};
+use websocket_std::sync::client::{Config, Reason, WSEvent, WSClient};
 use websocket_std::result::{WebSocketError, WebSocketResult};
-use std::thread;
+use std::thread::{self, sleep};
 use std::time::Duration;
 use std::io::{self, Write, Read, ErrorKind};
 use std::net::Shutdown;
 use core::array::TryFromSliceError;
-use std::sync::Arc;
-use std::cell::RefCell;
+use std::sync::{Arc, RwLock};
+use base64;
+use sha1_smol::Sha1;
 
+// Globally Unique Identifier
+const GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 // Returns the server TcpStream
 fn setup() -> (TcpListener, u16) {
@@ -40,7 +42,18 @@ fn read_all(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
     return Ok(data);
 }
 
-fn mock_accept_connection(listener: TcpListener) -> TcpStream {
+fn sec_websocket_accept(sec_websocket_key: &str) -> String {
+    let mut accept_key = String::with_capacity(sec_websocket_key.len() + GUID.len());
+    accept_key.push_str(sec_websocket_key);
+    accept_key.push_str(GUID);
+    let mut hasher = Sha1::new();
+    hasher.update(accept_key.as_bytes());
+    let accept_key = hasher.digest().bytes();
+    let accept_key = base64::encode(&accept_key);
+    return accept_key;
+}
+
+fn mock_accept_connection_no_websocket_key(listener: TcpListener) -> TcpStream {
     let (mut conn, _) = listener.accept().unwrap();
     conn.set_nonblocking(true).unwrap();
     
@@ -48,6 +61,34 @@ fn mock_accept_connection(listener: TcpListener) -> TcpStream {
     
     let http_response = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n Connection: Upgrade\r\n\r\n".as_bytes();
     conn.write_all(http_response).unwrap();
+
+    return conn;
+}
+
+fn mock_accept_connection(listener: TcpListener) -> TcpStream {
+    let (mut conn, _) = listener.accept().unwrap();
+    conn.set_nonblocking(true).unwrap();
+    
+    let mut request = Vec::new();
+    while request.is_empty() {
+        request = read_all(&mut conn).unwrap();
+    }
+
+    let request = String::from_utf8(request).unwrap();
+    let request = request.trim().to_lowercase();
+    let mut i = request.find("sec-websocket-key").unwrap();
+    let mut key = request.get(i..request.len()).unwrap();
+    i = key.find(":").unwrap();
+    key = key.get(i..key.len()).unwrap();
+    i = key.find("\r\n").unwrap();
+    key = key.get(i..key.len()).unwrap();
+    key = key.trim();
+
+    let accept_key = sec_websocket_accept(key);
+
+    let http_resonse = format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n Connection: Upgrade\r\n sec-websocket-accept: {}\r\n\r\n", accept_key);
+
+    conn.write_all(http_resonse.as_bytes()).unwrap();
 
     return conn;
 }
@@ -126,54 +167,128 @@ fn mock_unmask_control_frame(data: &Vec<u8>) -> (u16, Vec<u8>) {
 // -------------------- Connection and HandShake -------------------- //
 
 #[test]
-fn connection_success_no_close_handshake() {
-    let (listener, port) = setup();
-    
-    thread::spawn(move || {
-        let conn = mock_accept_connection(listener);
-        conn.shutdown(Shutdown::Both).unwrap();
-    });
-
-    fn on_close(reason: Reason, _data: Option<Arc<RefCell<Data>>>) {
-        match reason {
-            Reason::CLIENT_CLOSE(_) => assert!(true),
-            Reason::SERVER_CLOSE(_) => assert!(false)
-        }
-    }
-
-    fn on_connect(_ws: &mut SyncClient<RefCell<Data>>, data: Option<Arc<RefCell<Data>>>) {
-        let data = data.unwrap();
-        let mut data = data.borrow_mut();
-        data.connected = true;
-    }
+fn connection_success_handshake_error_no_sec_websocket_received() {
 
     struct Data {
         connected: bool
     }
+    
+    type WSData = Arc<RwLock<Data>>;
+    type WebSocket<'a> = WSClient<'a, WSData>;
+    let data: WSData = Arc::new(RwLock::new(Data { connected: false }));
 
-    let mut data = Arc::new(RefCell::new(Data { connected: false }));
-    let wsData: WSData<>
+    let data_client= data.clone();
 
-    let config: Config<RefCell<Data>> = Config { 
-        on_close: Some(on_close), 
-        on_connect: Some(on_connect), 
+    let (listener, port) = setup();
+    
+    thread::spawn(move || {
+        let conn = mock_accept_connection_no_websocket_key(listener);
+        while !data_client.read().unwrap().connected {}
+        conn.shutdown(Shutdown::Both).unwrap();
+    });
+
+    fn websocket_handler(_ws: &mut WebSocket, event: &WSEvent, _data: Option<WSData>) {
+        match event {
+            WSEvent::ON_CONNECT(_) => {},
+            WSEvent::ON_TEXT(_) => {},
+            WSEvent::ON_CLOSE(_) => {} 
+        }
+    } 
+
+    let config  = Config { 
+        callback: Some(websocket_handler),
         data: Some(data.clone()),
-        on_data: None, 
         protocols: None 
     };
 
-    let config: Option<Config<RefCell<Data>>> = Some(config);
-    let mut client: SyncClient<RefCell<Data>> = SyncClient::new();
+    let config: Option<Config<WSData>> = Some(config);
+    let mut client = WSClient::new();
     client.set_timeout(Duration::from_secs(1));
     client.init("localhost", port, "/", config);
 
-    while !data.borrow().connected {
-        client.event_loop().unwrap();
+    while !data.read().unwrap().connected {
+        match client.event_loop() {
+            Ok(_) => {},
+            Err(e) => {
+                assert!(e == WebSocketError::HandShake);
+                break;
+            }
+        }
     }
 
-    assert!(data.as_ref().connected);
+    assert!(!data.read().unwrap().connected);
 
 }
+
+
+// #[test]
+// fn connection_success_no_close_handshake() {
+
+//     struct Data {
+//         connected: bool
+//     }
+    
+//     type WSData = Arc<RwLock<Data>>;
+//     type WebSocket<'a> = WSClient<'a, WSData>;
+//     let data: WSData = Arc::new(RwLock::new(Data { connected: false }));
+
+//     let data_client= data.clone();
+
+//     let (listener, port) = setup();
+    
+//     thread::spawn(move || {
+//         let conn = mock_accept_connection(listener);
+//         while !data_client.read().unwrap().connected {}
+//         conn.shutdown(Shutdown::Both).unwrap();
+//     });
+
+//     fn websocket_handler(ws: &mut WebSocket, event: &WSEvent, data: Option<WSData>) {
+//         match event {
+//             WSEvent::ON_CONNECT(msg) => on_connect(ws, msg, data),
+//             WSEvent::ON_TEXT(msg) => on_message(ws, msg, data),
+//             WSEvent::ON_CLOSE(reason) => on_close(reason, data)
+//         }
+//     } 
+
+//     fn on_message(ws: &mut WebSocket, msg: &String, data: Option<WSData>) {}
+
+//     fn on_close(reason: &Reason, _data: Option<WSData>) {
+//         match reason {
+//             Reason::CLIENT_CLOSE(_) => assert!(true),
+//             Reason::SERVER_CLOSE(_) => assert!(false)
+//         }
+//     }
+
+//     fn on_connect(_ws: &mut WebSocket, msg: &Option<String>, data: Option<WSData>) {
+//         let d = data.unwrap();
+//         let mut d = d.write().unwrap();
+//         d.connected = true;
+//     }
+
+//     let config  = Config { 
+//         callback: Some(websocket_handler),
+//         data: Some(data.clone()),
+//         protocols: None 
+//     };
+
+//     let config: Option<Config<WSData>> = Some(config);
+//     let mut client = WSClient::new();
+//     client.set_timeout(Duration::from_secs(1));
+//     client.init("localhost", port, "/", config);
+
+//     while !data.read().unwrap().connected {
+//         match client.event_loop() {
+//             Ok(_) => {},
+//             Err(e) => {
+//                 assert!(e == WebSocketError::ConnectionClose);
+//                 break;
+//             } 
+//         }
+//     }
+
+//     assert!(data.read().unwrap().connected);
+// }
+
 // #[test]
 // fn connection_error_no_server_running() {
 //     let (listener, _) = setup();
@@ -225,42 +340,67 @@ fn connection_success_no_close_handshake() {
 
 
 // // -------------------- Sending data -------------------- //
-// #[test]
-// fn send_data_success_on_one_frame() {
-//     fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: Option<Arc<u32>>) {
-//         assert_eq!(msg, String::from("Hello"));
-//     }
+#[test]
+fn send_data_success_on_one_frame() {
 
-//     let (listener, port) = setup();
+    type WSData = u32;
+    type WebSocket<'a> = WSClient<'a, WSData>;
+    let data: WSData = 1;
+
+    let (listener, port) = setup();
     
-//     thread::spawn(move || {
-//         let mut conn = mock_accept_connection(listener);
-//         let data = mock_wait_for_frame(&mut conn);
-//         let data = mock_unmask_data(&data);
+    thread::spawn(move || {
+        let mut conn = mock_accept_connection(listener);
+        let data = mock_wait_for_frame(&mut conn);
+        let data = mock_unmask_data(&data);
         
-//         assert_eq!(String::from_utf8(data).unwrap(), "Hello");
+        assert_eq!(String::from_utf8(data).unwrap(), "Hello");
         
-//         let echo_frame: Vec<u8> = [0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f].to_vec();
+        let echo_frame: Vec<u8> = [0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f].to_vec();
 
-//         conn.write_all(echo_frame.as_slice()).unwrap();
-//         conn.shutdown(Shutdown::Both).unwrap();
+        conn.write_all(echo_frame.as_slice()).unwrap();
+        conn.shutdown(Shutdown::Both).unwrap();
 
-//     });
+    });
 
-//     let connection = sync_connect("localhost", port, "/", None);
-//     let mut client = connection.unwrap();
-//     client.set_timeout(Duration::from_secs(1));
-//     client.set_response_cb(callback, None);
+    fn websocket_handler(ws: &mut WebSocket, event: &WSEvent, data: Option<WSData>) {
+        match event {
+            WSEvent::ON_CONNECT(msg) => on_connect(ws, msg, data),
+            WSEvent::ON_TEXT(msg) => on_message(ws, msg, data),
+            WSEvent::ON_CLOSE(reason) => on_close(reason, data)
+        }
+    } 
 
-//     client.send("Hello").unwrap();
+    fn on_message(ws: &mut WebSocket, msg: &String, data: Option<WSData>) {}
 
-//     let mut i = 0;
-//     while i < 2 {
-//         client.event_loop().unwrap();
-//         i += 1;
-//     }
+    fn on_close(reason: &Reason, _data: Option<WSData>) {
+        match reason {
+            Reason::CLIENT_CLOSE(_) => assert!(true),
+            Reason::SERVER_CLOSE(_) => assert!(false)
+        }
+    }
 
-// }
+    fn on_connect(_ws: &mut WebSocket, msg: &Option<String>, data: Option<WSData>) {}
+
+    let config  = Config { 
+        callback: Some(websocket_handler),
+        data: Some(data.clone()),
+        protocols: None 
+    };
+
+    let config: Option<Config<WSData>> = Some(config);
+    let mut client = WSClient::new();
+    client.set_timeout(Duration::from_secs(1));
+    client.init("localhost", port, "/", config);
+    client.send("Hello");
+
+    let mut i = 0;
+    while i < 2 {
+        client.event_loop().unwrap();
+        i += 1;
+    }
+
+}
 
 // #[test]
 // fn send_data_success_more_than_one_frame() {
