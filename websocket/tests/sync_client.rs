@@ -1,7 +1,7 @@
 use std::net::{TcpListener, TcpStream};
 use websocket_std::sync::client::{Config, Reason, WSEvent, WSClient};
-use websocket_std::result::{WebSocketError, WebSocketResult};
-use std::thread::{self, sleep};
+use websocket_std::result::WebSocketError;
+use std::thread;
 use std::time::Duration;
 use std::io::{self, Write, Read, ErrorKind};
 use std::net::Shutdown;
@@ -9,6 +9,8 @@ use core::array::TryFromSliceError;
 use std::sync::{Arc, RwLock};
 use base64;
 use sha1_smol::Sha1;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 // Globally Unique Identifier
 const GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -42,6 +44,17 @@ fn read_all(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
     return Ok(data);
 }
 
+fn read_all_sync(stream: &mut TcpStream) -> Vec<u8> {
+    let mut buff: [u8; 1024] = [0; 1024];
+    let mut data = Vec::new();
+    match stream.read(&mut buff) {
+        Ok(amount) => { data.extend_from_slice(&buff[0..amount]) },
+        Err(e) => {}
+    }
+
+    return data;
+}
+
 fn sec_websocket_accept(sec_websocket_key: &str) -> String {
     let mut accept_key = String::with_capacity(sec_websocket_key.len() + GUID.len());
     accept_key.push_str(sec_websocket_key);
@@ -55,9 +68,8 @@ fn sec_websocket_accept(sec_websocket_key: &str) -> String {
 
 fn mock_accept_connection_no_websocket_key(listener: TcpListener) -> TcpStream {
     let (mut conn, _) = listener.accept().unwrap();
-    conn.set_nonblocking(true).unwrap();
     
-    let _ = read_all(&mut conn).unwrap();
+    let _ = read_all_sync(&mut conn);
     
     let http_response = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n Connection: Upgrade\r\n\r\n".as_bytes();
     conn.write_all(http_response).unwrap();
@@ -67,22 +79,21 @@ fn mock_accept_connection_no_websocket_key(listener: TcpListener) -> TcpStream {
 
 fn mock_accept_connection(listener: TcpListener) -> TcpStream {
     let (mut conn, _) = listener.accept().unwrap();
-    conn.set_nonblocking(true).unwrap();
     
-    let mut request = Vec::new();
-    while request.is_empty() {
-        request = read_all(&mut conn).unwrap();
-    }
+    let request = read_all_sync(&mut conn);
+    print!("{}\n", String::from_utf8(request.clone()).unwrap());
 
     let request = String::from_utf8(request).unwrap();
-    let request = request.trim().to_lowercase();
-    let mut i = request.find("sec-websocket-key").unwrap();
+    let request_lower = request.replace(" ", "").to_lowercase();
+    let mut i = request_lower.find("sec-websocket-key").unwrap();
     let mut key = request.get(i..request.len()).unwrap();
     i = key.find(":").unwrap();
-    key = key.get(i..key.len()).unwrap();
+    key = key.get(i+1..key.len()).unwrap();
     i = key.find("\r\n").unwrap();
-    key = key.get(i..key.len()).unwrap();
-    key = key.trim();
+    key = key.get(0..i).unwrap();
+    key = key.trim_start();
+
+    print!("key: {}\n", key);
 
     let accept_key = sec_websocket_accept(key);
 
@@ -106,8 +117,18 @@ fn mock_refuse_connection(listener: TcpListener, http_response: &[u8]) -> TcpStr
 fn mock_wait_for_frame(conn: &mut TcpStream) -> Vec<u8> {
     let _data: Vec<u8> = Vec::new();
     let mut data_res = Vec::new();
-    while _data.len() == 0 {
+    while data_res.len() == 0 {
         let _data = read_all(conn).unwrap();
+        data_res.extend(_data);
+    }
+    return data_res;
+}
+
+fn mock_wait_for_frame_sync(conn: &mut TcpStream) -> Vec<u8> {
+    let _data: Vec<u8> = Vec::new();
+    let mut data_res = Vec::new();
+    while data_res.len() == 0 {
+        let _data = read_all_sync(conn);
         data_res.extend(_data);
     }
     return data_res;
@@ -339,19 +360,20 @@ fn connection_success_handshake_error_no_sec_websocket_received() {
 // }
 
 
+// TODO: on_close is never executed because the mocked server never response to close handshake
 // // -------------------- Sending data -------------------- //
 #[test]
 fn send_data_success_on_one_frame() {
 
-    type WSData = u32;
+    type WSData = Rc<RefCell<u32>>;
     type WebSocket<'a> = WSClient<'a, WSData>;
-    let data: WSData = 1;
+    let data: WSData = Rc::new(RefCell::new(0));
 
     let (listener, port) = setup();
     
     thread::spawn(move || {
         let mut conn = mock_accept_connection(listener);
-        let data = mock_wait_for_frame(&mut conn);
+        let data = mock_wait_for_frame_sync(&mut conn);
         let data = mock_unmask_data(&data);
         
         assert_eq!(String::from_utf8(data).unwrap(), "Hello");
@@ -365,13 +387,18 @@ fn send_data_success_on_one_frame() {
 
     fn websocket_handler(ws: &mut WebSocket, event: &WSEvent, data: Option<WSData>) {
         match event {
-            WSEvent::ON_CONNECT(msg) => on_connect(ws, msg, data),
+            WSEvent::ON_CONNECT(_) => {},
             WSEvent::ON_TEXT(msg) => on_message(ws, msg, data),
             WSEvent::ON_CLOSE(reason) => on_close(reason, data)
         }
     } 
 
-    fn on_message(ws: &mut WebSocket, msg: &String, data: Option<WSData>) {}
+    fn on_message(ws: &mut WebSocket, msg: &String, data: Option<WSData>) {
+        assert!(msg == "Hello");
+        let d = data.unwrap();
+        let mut d = d.borrow_mut();
+        *d += 1;
+    }
 
     fn on_close(reason: &Reason, _data: Option<WSData>) {
         match reason {
@@ -380,7 +407,150 @@ fn send_data_success_on_one_frame() {
         }
     }
 
-    fn on_connect(_ws: &mut WebSocket, msg: &Option<String>, data: Option<WSData>) {}
+    let config  = Config { 
+        callback: Some(websocket_handler),
+        data: Some(data.clone()),
+        protocols: None 
+    };
+
+    let config: Option<Config<WSData>> = Some(config);
+    let mut client = WSClient::new();
+    client.set_timeout(Duration::from_secs(10));
+    client.init("localhost", port, "/", config);
+    client.send("Hello");
+
+    while *data.borrow() < 1 {
+        client.event_loop().unwrap();
+    }
+
+    assert!(*data.borrow() == 1);
+
+}
+
+#[test]
+fn send_data_success_more_than_one_frame() {
+    type WSData = Rc<RefCell<u32>>;
+    type WebSocket<'a> = WSClient<'a, WSData>;
+    let data: WSData = Rc::new(RefCell::new(0));
+
+    let (listener, port) = setup();
+    
+    thread::spawn(move || {
+        let mut conn = mock_accept_connection(listener);
+        let mut msg = String::new();
+
+        for _ in 0..2 {
+            let data = mock_wait_for_frame_sync(&mut conn);
+            let data = mock_unmask_data(&data);
+            match String::from_utf8(data) {
+                Ok(d) => msg.push_str(d.as_str()),
+                Err(e) => { print!("error: {}", e)}
+            }
+        }
+        
+        assert_eq!(msg, "Hello");
+        
+        let echo_frame: Vec<u8> = [0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f].to_vec();
+
+        conn.write_all(echo_frame.as_slice()).unwrap();
+        conn.shutdown(Shutdown::Both).unwrap();
+
+    });
+
+    fn websocket_handler(ws: &mut WebSocket, event: &WSEvent, data: Option<WSData>) {
+        match event {
+            WSEvent::ON_CONNECT(msg) => {},
+            WSEvent::ON_TEXT(msg) => on_message(ws, msg, data),
+            WSEvent::ON_CLOSE(reason) => on_close(reason, data)
+        }
+    } 
+
+    fn on_message(_ws: &mut WebSocket, _: &String, data: Option<WSData>) {
+        let d = data.unwrap();
+        let mut d = d.borrow_mut();
+        *d +=1; 
+    }
+
+    fn on_close(reason: &Reason, _data: Option<WSData>) {
+        match reason {
+            Reason::CLIENT_CLOSE(_) => assert!(true),
+            Reason::SERVER_CLOSE(_) => assert!(false)
+        }
+    }
+
+    let config  = Config { 
+        callback: Some(websocket_handler),
+        data: Some(data.clone()),
+        protocols: None 
+    };
+
+    let config: Option<Config<WSData>> = Some(config);
+    let mut client = WSClient::new();
+    client.set_timeout(Duration::from_secs(1));
+    client.set_message_size(3);
+    client.init("localhost", port, "/", config);
+    client.send("Hello");
+
+    while *data.borrow() < 1 {
+        client.event_loop().unwrap();
+        thread::sleep(Duration::from_millis(50)); // Force the client to be slow in order to receive the data in two frames by the mocked server
+    }
+
+    drop(client);
+
+    assert!(*data.borrow() == 1);
+} 
+
+#[test]
+fn connect_send_and_client_close_successfully() {
+    type WSData = Rc<RefCell<u32>>;
+    type WebSocket<'a> = WSClient<'a, WSData>;
+    let data: WSData = Rc::new(RefCell::new(0));
+
+    let (listener, port) = setup();
+    
+    thread::spawn(move || {
+        let mut conn = mock_accept_connection(listener);
+
+        let data = mock_wait_for_frame_sync(&mut conn);
+        let data = mock_unmask_data(&data);
+        
+        assert_eq!(String::from_utf8(data).unwrap(), "Hello");
+        
+        let echo_frame: Vec<u8> = [0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f].to_vec();
+
+        conn.write_all(echo_frame.as_slice()).unwrap();
+        let close_frame = mock_wait_for_frame_sync(&mut conn);
+
+        let (status, reason) = mock_unmask_control_frame(&close_frame);
+        
+        assert_eq!(status, 1000);
+        assert_eq!(String::from_utf8(reason).unwrap().as_str(), "Done");
+
+        conn.shutdown(Shutdown::Both).unwrap();
+
+    });
+
+    fn websocket_handler(ws: &mut WebSocket, event: &WSEvent, data: Option<WSData>) {
+        match event {
+            WSEvent::ON_CONNECT(msg) => {},
+            WSEvent::ON_TEXT(msg) => on_message(ws, msg, data),
+            WSEvent::ON_CLOSE(reason) => on_close(reason, data)
+        }
+    } 
+
+    fn on_message(_ws: &mut WebSocket, _: &String, data: Option<WSData>) {
+        let d = data.unwrap();
+        let mut d = d.borrow_mut();
+        *d +=1;
+    }
+
+    fn on_close(reason: &Reason, _data: Option<WSData>) {
+        match reason {
+            Reason::CLIENT_CLOSE(_) => assert!(true),
+            Reason::SERVER_CLOSE(_) => assert!(false)
+        }
+    }
 
     let config  = Config { 
         callback: Some(websocket_handler),
@@ -394,58 +564,15 @@ fn send_data_success_on_one_frame() {
     client.init("localhost", port, "/", config);
     client.send("Hello");
 
-    let mut i = 0;
-    while i < 2 {
+    while *data.borrow() < 1 {
         client.event_loop().unwrap();
-        i += 1;
+        thread::sleep(Duration::from_millis(50));
     }
 
+    drop(client);
+
+    assert!(*data.borrow() == 1);
 }
-
-// #[test]
-// fn send_data_success_more_than_one_frame() {
-//     fn callback(_ws: &mut SyncClient<u32>, msg: String, _data: Option<Arc<u32>>) {
-//         assert_eq!(msg, String::from("Hello"));
-//     }
-
-//     let (listener, port) = setup();
-    
-//     thread::spawn(move || {
-//         let mut conn = mock_accept_connection(listener);
-//         let mut msg = String::new();
-
-//         let mut i = 0;
-//         while i < 2 {
-//             let data = mock_wait_for_frame(&mut conn);
-//             let data = mock_unmask_data(&data);
-//             msg.push_str(String::from_utf8(data).unwrap().as_str());
-//             i += 1;
-//         }
-        
-//         assert_eq!(msg, "Hello");
-        
-//         let echo_frame: Vec<u8> = [0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f].to_vec();
-
-//         conn.write_all(echo_frame.as_slice()).unwrap();
-//         conn.shutdown(Shutdown::Both).unwrap();
-
-//     });
-
-//     let connection = sync_connect("localhost", port, "/", None);
-//     let mut client = connection.unwrap();
-//     client.set_timeout(Duration::from_secs(1));
-//     client.set_message_size(3);
-//     client.set_response_cb(callback, None);
-
-//     client.send("Hello").unwrap();
-
-//     let mut i = 0;
-//     while i < 3 {
-//         client.event_loop().unwrap();
-//         i += 1;
-//     }
-
-// }
 
 // #[test]
 // fn connect_send_and_client_close_successfully() {
