@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+#[allow(dead_code)]
 pub struct Extension {
     name: String,
     params: Vec<Parameter>
@@ -11,6 +12,7 @@ impl Extension {
     } 
 }
 
+#[allow(dead_code)]
 pub struct Parameter {
     name: String,
     args: Option<HashMap<String, Option<String>>> 

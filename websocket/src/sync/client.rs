@@ -14,8 +14,6 @@ use crate::core::binary::bytes_to_u16;
 use super::super::result::WebSocketResult;
 use crate::http::request::{Request, Method};
 use crate::http::response::Response;
-use std::sync::Arc;
-use std::cell::{RefCell, RefMut, Ref};
 use crate::ws_basic::key::{gen_key, verify_key};
 use crate::extension::Extension;
 

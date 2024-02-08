@@ -25,8 +25,8 @@ fn setup() -> (TcpStream, TcpStream) {
 }
 
 fn before_each(server: TcpStream, client: TcpStream) {
-    server.shutdown(Shutdown::Both);
-    client.shutdown(Shutdown::Both);
+    let _ = server.shutdown(Shutdown::Both);
+    let _ = client.shutdown(Shutdown::Both);
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn eof_reached () {
     let (server, mut client) = setup();
     let mut buf: [u8; 8] = [0; 8];
 
-    server.shutdown(Shutdown::Both);
+    let _ = server.shutdown(Shutdown::Both);
     sleep(Duration::from_secs(1));
 
     let res = read_into_buffer(&mut client, &mut buf);
@@ -59,7 +59,7 @@ fn eof_reached () {
         e => panic!("Unreachable: {}", e) // grcov-excl-line 
     }
 
-    client.shutdown(Shutdown::Both);
+    let _ = client.shutdown(Shutdown::Both);
 }
 
 #[test]

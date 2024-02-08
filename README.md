@@ -2,6 +2,10 @@
 
 Implementation of websocket for rust with std support, means that any embeded systems which have support for the std library should works. Of course this library works on any normal computer.
 
+# C
+
+The library provides a ffi interface to be used by C or C++ code.
+
 ## MCUs Tested
 
 ### ESP32

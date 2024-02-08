@@ -3,7 +3,7 @@ use websocket_std::sync::client::{Config, Reason, WSEvent, WSClient};
 use websocket_std::result::WebSocketError;
 use std::thread;
 use std::time::Duration;
-use std::io::{self, Write, Read, ErrorKind};
+use std::io::{Write, Read};
 use std::net::Shutdown;
 use core::array::TryFromSliceError;
 use std::sync::{Arc, RwLock};
@@ -23,33 +23,12 @@ fn setup() -> (TcpListener, u16) {
     (listener, port)
 }
 
-fn read_all(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
-    let mut data = Vec::new();
-    let mut buff: [u8; 1024] = [0; 1024];
-
-    loop {
-        let res = stream.read(&mut buff);
-        match res {
-            Ok(amount) => {
-                let d = &(buff[0..amount]);
-                data.extend_from_slice(d);
-            }
-            Err(e) => {
-                if e.kind() == ErrorKind::WouldBlock { break }
-                return Err(e);
-            }
-        }
-    }
-    
-    return Ok(data);
-}
-
 fn read_all_sync(stream: &mut TcpStream) -> Vec<u8> {
     let mut buff: [u8; 1024] = [0; 1024];
     let mut data = Vec::new();
     match stream.read(&mut buff) {
         Ok(amount) => { data.extend_from_slice(&buff[0..amount]) },
-        Err(e) => {}
+        Err(_) => {}
     }
 
     return data;
@@ -108,20 +87,10 @@ fn mock_refuse_connection(listener: TcpListener, http_response: &[u8]) -> TcpStr
     let (mut conn, _) = listener.accept().unwrap();
     conn.set_nonblocking(true).unwrap();
     
-    let _ = read_all(&mut conn).unwrap();
+    let _ = read_all_sync(&mut conn);
     conn.write_all(http_response).unwrap();
 
     return conn;
-}
-
-fn mock_wait_for_frame(conn: &mut TcpStream) -> Vec<u8> {
-    let _data: Vec<u8> = Vec::new();
-    let mut data_res = Vec::new();
-    while data_res.len() == 0 {
-        let _data = read_all(conn).unwrap();
-        data_res.extend(_data);
-    }
-    return data_res;
 }
 
 fn mock_wait_for_frame_sync(conn: &mut TcpStream) -> Vec<u8> {
@@ -393,7 +362,7 @@ fn send_data_success_on_one_frame() {
         }
     } 
 
-    fn on_message(ws: &mut WebSocket, msg: &String, data: Option<WSData>) {
+    fn on_message(_ws: &mut WebSocket, msg: &String, data: Option<WSData>) {
         assert!(msg == "Hello");
         let d = data.unwrap();
         let mut d = d.borrow_mut();
@@ -459,7 +428,7 @@ fn send_data_success_more_than_one_frame() {
 
     fn websocket_handler(ws: &mut WebSocket, event: &WSEvent, data: Option<WSData>) {
         match event {
-            WSEvent::ON_CONNECT(msg) => {},
+            WSEvent::ON_CONNECT(_) => {},
             WSEvent::ON_TEXT(msg) => on_message(ws, msg, data),
             WSEvent::ON_CLOSE(reason) => on_close(reason, data)
         }
@@ -533,7 +502,7 @@ fn connect_send_and_client_close_successfully() {
 
     fn websocket_handler(ws: &mut WebSocket, event: &WSEvent, data: Option<WSData>) {
         match event {
-            WSEvent::ON_CONNECT(msg) => {},
+            WSEvent::ON_CONNECT(_) => {},
             WSEvent::ON_TEXT(msg) => on_message(ws, msg, data),
             WSEvent::ON_CLOSE(reason) => on_close(reason, data)
         }

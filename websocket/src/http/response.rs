@@ -12,6 +12,7 @@ pub struct Response {
 }
 
 impl Response {
+    #[allow(dead_code)]
     pub fn new(version: String, status_code: u16, status_text: String, headers: Option<HashMap<String, String>>, body: Option<String>) -> Self {
         Response { version, status_code, headers, status_text, body }
     }
