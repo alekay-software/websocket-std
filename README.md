@@ -10,11 +10,20 @@ The project is currently in beta phase, and while it is functional, further work
 You can use the library in the following ways:
 
 - In any Rust project that allows the use of the standard library, such as ``esp-rs`` with ``std`` support. Check out the [esp-rs docs](https://esp-rs.github.io/book/overview/using-the-standard-library.html) for more information.
-- In any C project, as it has a compatible FFI (Foreign Function Interface). You’ll need to compile the project as a static library and link it appropriately. Refer to this guide ([static lib usage](./C/README.md)) for more details.
+- In any C project, as it has a compatible FFI (Foreign Function Interface). You’ll need to compile the project as a static library and link it appropriately. Refer to this guide ([static lib usage](./ffi/README.md)) for more details.
 
 **Feel free to explore the project and contribute! 🚀**
 
 ---
+
+## Static library
+In the ``ffi/`` folder you will find the ``websocket-std.h`` header and a compiled static library for the xtensa architecture of the esp32 microcontroller from espressif.
+
+You can use this static library in your esp idf and arduino projects for esp32. Check [ffi/xtensa-esp32-idf](./ffi/xtensa-esp32-espidf/README.md) for more information.
+
+## Examples
+
+The [examples](./examples/) folder contains various examples of how to use ``websocket-std``.
 
 ## Features
 

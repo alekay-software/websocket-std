@@ -1,6 +1,6 @@
 [package]
 name = "websocket-std"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 authors = ["Alejandro Palomino <alejandropalomino22@gmail.com>"]
 rust-version = "1.65.0"
@@ -14,7 +14,7 @@ The library implement a ffi interface to be used by C or C++ code, meaning that 
 """
 
 categories = ["embedded"]
-keywords = ["http", "async", "api"]
+keywords = ["http", "async", "web"]
 
 
 [dependencies]
