@@ -5,8 +5,16 @@ edition = "2021"
 authors = ["Alejandro Palomino <alejandropalomino22@gmail.com>"]
 rust-version = "1.65.0"
 
+include = [
+    "src/",
+    "Cargo.toml",
+    "LICENSE",
+    "README.md"
+]
+
 license = "MIT"
 readme = "README.md"
+homepage = "https://github.com/alekay2200/websocket-std"
 repository = "https://github.com/alekay2200/websocket-std"
 description = """
 Websocket implementation using std support, focus on microcontrollers and interoperability with other languages like C through the ffi. 
