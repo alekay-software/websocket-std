@@ -9,8 +9,7 @@ license = "MIT"
 readme = "../README.md"
 repository = "https://github.com/alekay2200/websocket-std"
 description = """
-Websocket implementation using std support. You can use this library in projects where the std support exists like rust for esp32 with std support (https://esp-rs.github.io/book/overview/using-the-standard-library.html).
-The library implement a ffi interface to be used by C or C++ code, meaning that you can compile the code as a static library and use in any C or C++ project.
+Websocket implementation using std support, focus on microcontrollers and interoperability with other languages like C through the ffi. 
 """
 
 categories = ["embedded"]
