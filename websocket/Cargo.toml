@@ -1,6 +1,6 @@
 [package]
 name = "websocket-std"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2021"
 authors = ["Alejandro Palomino <alejandropalomino22@gmail.com>"]
 rust-version = "1.65.0"
