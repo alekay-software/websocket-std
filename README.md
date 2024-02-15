@@ -16,6 +16,12 @@ You can use the library in the following ways:
 
 ---
 
+## Installation
+```toml
+[dependencies]
+websocket-std = "0.0.5"
+```
+
 ## Static library
 In the ``ffi/`` folder you will find the ``websocket-std.h`` header and a compiled static library for the xtensa architecture of the esp32 microcontroller from espressif.
 
