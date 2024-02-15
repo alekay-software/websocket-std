@@ -5,8 +5,8 @@ edition = "2021"
 authors = ["Alejandro Palomino <alejandropalomino22@gmail.com>"]
 rust-version = "1.65.0"
 
-license = "Apache-2.0"
-readme = "README.md"
+license = "MIT"
+readme = "../README.md"
 repository = "https://github.com/alekay2200/websocket-std"
 description = """
 Websocket implementation using std support. You can use this library in projects where the std support exists like rust for esp32 with std support (https://esp-rs.github.io/book/overview/using-the-standard-library.html).
@@ -15,6 +15,7 @@ The library implement a ffi interface to be used by C or C++ code, meaning that 
 
 categories = ["embedded"]
 keywords = ["http", "async", "api"]
+
 
 [dependencies]
 bitflags = "2.3.2"

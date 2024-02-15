@@ -1,6 +1,13 @@
 [workspace]
+resolver = "2"
 
 members = [
     "websocket",
     "examples"
 ]
+
+[profile.dev]
+opt-level = 0 
+
+[profile.release]
+opt-level = 3
