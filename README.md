@@ -3,7 +3,7 @@
 This is a WebSocket implementation in Rust that utilizes the standard library. Its goal is to function on low-resource devices such as microcontrollers, although it can also be applied in high-performance computer programs. I started the project for three main reasons:
 - Learn rust.
 - Publish a library in crates.io.
-- How to use the library from other langugaes. 
+- How to use the library from other languages. 
 
 The project is currently in beta phase, and while it is functional, further work is needed for the final version. Since I am a sole developer and cannot dedicate as much time as I would like, I have decided to publish it for those who want to try it out and contribute to the project [CONTRIBUTING.md](./CONTRIBUTING.md).
 
