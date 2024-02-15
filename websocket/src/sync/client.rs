@@ -77,17 +77,6 @@ pub enum WSEvent {
     ON_CLOSE(Reason),
 }
 
-// [] TODO: Cerrar el socket cuando la conexion se ha cerrado por alguno de los 2 puntos y la cola de mensajes esta vacia.
-// [] TODO: Event loop debe dar error cuando al conexion esta cerrada y todos los mensajes enviados.
-// [] TODO: Implement framable trait (trait to split the data into frames)
-// [] TODO: Create a trait to send and receive data from the websocket
-// [x] TODO: Queues for messages to send
-// [] TODO: Queues for messages to receive
-// [x] TODO: Event loop must send messages from the queues
-// [] TODO: Event loop must receive messages from the queues
-// [] TODO: Decide if write or read messages
-// [] TODO: Send the size of the buffer to read data from the stream, so the client will decide the perfomance base on the memory available or the size of the messages that the system is going to receive
-// Remove warning dead code for [host, port, path] fields. The Client keeps this information because could be useful in the future.
 #[allow(dead_code)]
 #[repr(C)]
 pub struct WSClient<'a, T: Clone> {
@@ -112,8 +101,6 @@ pub struct WSClient<'a, T: Clone> {
 }                                                            // The close connection depends on the order of the functions event_loop and is_connected
                         
 
-// TODO: No se implementa la funcion de cierre de la conexion, la conexion se cierra cuando termina la vida del cliente
-// TODO: No hace falta comprobar los casos en los que el cliente cierra la conexion porque nunca va a llegar ese punto ocurre en su borrado de memoria
 impl<'a, T> WSClient<'a, T> where T: Clone {
     pub fn new() -> Self {
         WSClient { 
@@ -193,7 +180,6 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
         return Some(self.protocol.as_ref().unwrap().as_str());
     }
 
-    // TODO: The message size does not take into account
     pub fn set_message_size(&mut self, size: u64) {
         self.message_size = size;
     }
@@ -202,7 +188,6 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
         self.timeout = timeout;
     }
 
-    // TODO: Create just one frame to send, if need to create more than one, store the rest of the bytes into a vector
     pub fn send(&mut self, payload: &str) {
         // If connection is close do nothing
         if self.connection_status == ConnectionStatus::CLOSE { return }
@@ -422,7 +407,7 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
     }
 
     fn read_bytes_from_socket(&mut self) -> WebSocketResult<Event> {
-        // Add timeout attribute to self in order to raise an error if any op overflow the time required to finish
+        // TODO: Add timeout attribute to self in order to raise an error if any op overflow the time required to finish
         let mut buffer = [0u8; 1024];
         let reader = self.stream.as_mut().unwrap();
         let bytes_readed = read_into_buffer(reader, &mut buffer)?;
@@ -542,7 +527,6 @@ impl<'a, T> WSClient<'a, T> where T: Clone {
     }
 }
 
-// TODO: Refactor the code
 impl<'a, T> Drop for WSClient<'a, T> where T: Clone {
     fn drop(&mut self) {
         if self.connection_status != ConnectionStatus::NOT_INIT &&

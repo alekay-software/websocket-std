@@ -58,8 +58,7 @@ WSSClient_t *wssclient_new(void);
 * - const char* host: Server host
 * - uint16_t port: Server port
 * - const char* path: Server path 
-* - void* callback: Callback to execute when an events comes 
-*
+* - ws_handler_t* callback: Callback to execute when an events comes 
 *
 */
 void wssclient_init(WSSClient_t *client,
@@ -75,7 +74,7 @@ void wssclient_init(WSSClient_t *client,
 * - WSSClient_t* client
 *
 * Return:
-* The error if the websocket got it.
+* Internal state of the websocket, just to know if it is fine or something happened during some operation.
 *
 */
 WSStatus wssclient_loop(WSSClient_t* client);
@@ -87,9 +86,6 @@ WSStatus wssclient_loop(WSSClient_t* client);
 * Parameters:
 * - WSSClient_t* client
 * - message: string to send
-*
-* Return:
-* The error if the websocket got it.
 *
 */
 void wssclient_send(WSSClient_t* client, const char* message);

@@ -1,25 +1,63 @@
-# webSocket-std
+# websocket-std
 
-Implementation of websocket for rust with std support, means that any embeded systems which have support for the std library should works. Of course this library works on any normal computer.
+This is a WebSocket implementation in Rust that utilizes the standard library. Its goal is to function on low-resource devices such as microcontrollers, although it can also be applied in high-performance computer programs. I started the project for three main reasons:
+- Learn rust.
+- Publish a library in crates.io.
+- How to use the library from other langugaes. 
 
-# C
+The project is currently in beta phase, and while it is functional, further work is needed for the final version. Since I am a sole developer and cannot dedicate as much time as I would like, I have decided to publish it for those who want to try it out and contribute to the project [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-The library provides a ffi interface to be used by C or C++ code.
+You can use the library in the following ways:
 
-## MCUs Tested
+- In any Rust project that allows the use of the standard library, such as ``esp-rs`` with ``std`` support. Check out the [esp-rs docs](https://esp-rs.github.io/book/overview/using-the-standard-library.html) for more information.
+- In any C project, as it has a compatible FFI (Foreign Function Interface). You’ll need to compile the project as a static library and link it appropriately. Refer to this guide ([static lib usage](./C/README.md)) for more details.
 
-### ESP32
-
-See ``esp-rs`` project with ``std`` support: [esp-rs docs](https://esp-rs.github.io/book/overview/using-the-standard-library.html)
-
-The library was tested on
-- ESP32
-
-# Test
+**Feel free to explore the project and contribute! 🚀**
 
 ---
 
+## Features
+
+### Sync Client
+
+The sync client manage an internal event loop, when you call a function to perform a websocket operation (``init``, ``send``, ...)
+it will be queued and as soon as you call the ``event_loop`` function it will perform one input (something was received)
+and one output (something to send to server) operations in one execution.
+
+You can also use ``threads`` to work with the library. Check [examples](./examples/) for more information.
+
+#### What works
+- Send text messages.
+- Handle received text messages.
+- Handle on connection events.
+- Handle on close events.
+- Work with websocket protocols.
+- Set the maximun length of the text that the websocket will send for each dataframe.
+
+#### Comming
+- Websocket over SSL.
+- Send and receive binary data.
+
+### Sync Server
+
+I'm planning also to introduce in the library a ``sync server`` following the same philosophy as the sync client.
+
+---
+
+## MCUs Tested
+
+- ``ESP32`` using **esp-rs** with std support
+- ``ESP32`` using ``arduino`` framework in a ``PlatformIO`` project. (Should also work with esp-idf proyects).
+
+---
+
+# Test
+
+Since is my first rust big project I started using the following tools for testing and code coveragera, but I would like to
+define another way of doing that because the test coverage reports are not the bests. I'm open to hear better ways of doing testing in rust.
+
 ## Execute all test
+
 
 ```console
 cargo test
@@ -76,8 +114,12 @@ grcov . --binary-path ./target/debug/deps/ -s . -t html --branch --ignore-not-ex
 
 The report will be generated at ``target/coverage/``, open ``index.html`` with a browser to see the results.
 
-## Python websocket server to test
-Code of a python3 websocket server to test the client
+---
+
+## Python websocket server
+
+Since the library doesn't have a way to create websocket servers, here you will find an echo server example in python to test
+the client.
 
 ### Requirements
 - pip install websockets==11.0.3
@@ -85,82 +127,21 @@ Code of a python3 websocket server to test the client
 ### Code
 ```python
 import asyncio
-from websockets.frames import Frame
 from websockets.server import serve
-from websockets.extensions import ServerExtensionFactory, Extension
-from websockets.typing import ExtensionParameter, ExtensionName
-from typing import Optional, Sequence, Tuple, List, Union
 
 HOST  = "0.0.0.0"
 PORT  = 3000
-protocol = ["scoreboard", "app"]
-
-class PersonExtension(Extension):
-    def __init__(self, name: str, person_name):
-        self.name = ExtensionName(name)
-        self.person_name = person_name
-
-    def decode(self, frame: Frame, *, max_size: Union[int, None] = None) -> Frame:
-        return frame
-    
-    def encode(self, frame: Frame) -> Frame:
-        frame.data += (" " + self.person_name).encode("utf-8")
-        return frame
-
-def process_param(
-        params: Sequence[ExtensionParameter], 
-        accepted_extensions: Sequence[Extension]
-    ) -> Tuple[List[ExtensionParameter], Extension]:
-
-    ext = PersonExtension("person", params[0][1])
-
-    return ([*params], ext)
-
-sef = ServerExtensionFactory()
-sef.name = "person"
-sef.process_request_params = process_param
+protocol = ["superchat", "app", "chat"]
 
 async def echo(websocket):
     async for message in websocket:
         if websocket.open:
-            # print("Message: ", message)
             await websocket.send(message)
 
 async def main():
-    async with serve(echo, HOST, PORT, subprotocols=protocol, extensions=[sef]):
+    async with serve(echo, HOST, PORT, subprotocols=protocol):
+        print(f"Websocket server running on: {HOST}:{PORT}")
         await asyncio.Future()  # run forever
 
 asyncio.run(main())
-```
-
-
-## Create a static lib for C++
-Using the cbindgen tool
-```console
-cbindgen --config cbindgen.toml --crate websocket-std --output websocket-std.h
-```
-
-or just create build.rs inside the crate to generate the code when build with cargo.
-Also include dev dependenci in cargo.toml
-
-```toml
-[build-dependencies]
-cbindgen = "0.24.0"
-```
-
-
-```rust
-extern crate cbindgen;
-
-use std::env;
-
-fn main() {
-    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-
-    cbindgen::Builder::new()
-      .with_crate(crate_dir)
-      .generate()
-      .expect("Unable to generate bindings")
-      .write_to_file("bindings.h");
-}
 ```

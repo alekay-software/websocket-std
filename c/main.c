@@ -1,63 +1,50 @@
-// En C++ (main.cpp)
-#include "websocket/websocket-std.h"
+#include <websocket-std.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <pthread.h>
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <pthread.h>
 
 #define FALSE 0
 #define TRUE 1 
 
-// pthread_mutex_t mutex;
 int total = 0;
 
 void ws_handler(WSSClient_t* client, RustEvent rs_event, void* data) {
+    // This function is required because the rust events are not compatible with C.
+    // It will return a WSEvent_t struct compatible with C.
     WSEvent_t event = from_rust_event(rs_event);
-    printf("new event %i \n", event.kind);
     if (event.kind == WSEvent_CONNECT) { 
-        printf("Connected\n");
         if (event.value != NULL) {
             char* msg = (char*) event.value;
             printf("Message received on connected: %s\n", msg);
         }
+        wssclient_send(client, "Connection complete");
     } else if (event.kind == WSEvent_CLOSE) {
         WSReason_t* ws_reason = (WSReason_t*) event.value;
 
-        switch (ws_reason->reason)
-        {
-        case WSREASON_SERVER_CLOSED: 
-            printf("Server close the connection C: %u\n", ws_reason->status);
-            break;
-        case WSREASON_CLIENT_CLOSED: 
-            printf("Client close the connection C: %u\n", ws_reason->status);
-            break;
-        default:
-            break;
+        switch (ws_reason->reason) {
+            case WSREASON_SERVER_CLOSED: 
+                printf("Server close the connection C: %u\n", ws_reason->status);
+                break;
+            case WSREASON_CLIENT_CLOSED: 
+                printf("Client close the connection C: %u\n", ws_reason->status);
+                break;
+            default:
+                break;
         }
     } else if (event.kind == WSEvent_TEXT) {
-        double sleep_time = (double)rand() / RAND_MAX;
-        sleep(sleep_time);
-        int aux = total; 
-        total = aux + 1; 
+        total++; 
         const char* message = (char*) event.value;
-        // printf("TEXT (%zu): %s\n", strlen(message), message);
-        // wssclient_send(client, "Hello from C response");
+        printf("TEXT (%zu): %s\n", strlen(message), message);
+        wssclient_send(client, "Hello from C response");
     }
 
 }
 
-// Función que será ejecutada por el hilo
 void *handler(void *arg) {
     WSSClient_t *client = (WSSClient_t*) arg;
-
-    for(int i = 0; i < 1000; i++) {
-        wssclient_send(client, "Hello from C");
-    }
-
-    // printf("Se han enviado los mensajese en 10 segunos se recibiran todas las respuestas\n");
-    // sleep(10);
 
     time_t start, end;
     time(&start);
@@ -65,7 +52,6 @@ void *handler(void *arg) {
     while (TRUE) {
         time(&end);
         if (difftime(end, start) >= 10) { break; }
-        // pthread_mutex_lock(&mutex);
         WSStatus status = wssclient_loop(client);
        
         if (status != WSStatusOK) { 
@@ -100,57 +86,39 @@ void *handler(void *arg) {
                 }
             break;
         }
-        // pthread_mutex_unlock(&mutex);
     } 
     return NULL;
 }
 
 int main() {
     char cadena[100];
-    pthread_t h1, h2;
-    // pthread_mutex_init(&mutex, NULL);
-    WSSClient_t *c1, *c2;
+    WSSClient_t *client;
+    pthread_t thread;
 
-    c1 = wssclient_new();
-    c2 = wssclient_new();
-    if ( c1 == NULL || c2 == NULL ) {
+    // Create new websocket
+    client = wssclient_new();
+
+    if (client == NULL) {
         printf("Buy more ram\n");
         return 1; 
     }
 
-    if (pthread_create(&h1, NULL, handler, c1) != 0) {
+    // The websocket will be managed by a thread but this is not necessary, just to show
+    // that the websocket is capable os do that.
+    if (pthread_create(&thread, NULL, handler, client) != 0) {
         fprintf(stderr, "Error al crear el hilo\n");
         return 1;
     }
 
-    if (pthread_create(&h2, NULL, handler, c2) != 0) {
-        fprintf(stderr, "Error al crear el hilo\n");
-        return 1;
-    }
+    // Init connection
+    wssclient_init(client, "localhost", 3000, "/", ws_handler);
 
-    wssclient_init(c1, "localhost", 3000, "/", ws_handler);
-    wssclient_init(c2, "localhost", 3000, "/", ws_handler);
-    // wssclient_send(client, "First msg form C");
-    // while (!finish) {
-    //     printf("Mensaje: ");
-    //     fgets(cadena, sizeof(cadena), stdin);
-    //     pthread_mutex_lock(&mutex);
-    //     if (strcmp(cadena, "fin\n") == 0) {
-    //         finish = TRUE;
-    //     } else {
-    //         wssclient_send(client, cadena); 
-    //     }
-    //     pthread_mutex_unlock(&mutex);
-    // }
+    pthread_join(thread, NULL);
 
-    // sleep(10);
-    // finish = TRUE;
+    // Clean the memory used by the websocket and close the connection gracefully
+    wssclient_drop(client);
 
-    pthread_join(h1, NULL);
-    pthread_join(h2, NULL);
-    wssclient_drop(c1);
-    wssclient_drop(c2);
-    printf("Total %d: \n", total);
+    printf("Total messages received: %d: \n", total);
 
     return 0;
 }
