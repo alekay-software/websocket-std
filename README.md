@@ -19,7 +19,7 @@ You can use the library in the following ways:
 ## Installation
 ```toml
 [dependencies]
-websocket-std = "0.0.5"
+websocket-std = "0.0.6"
 ```
 
 ## Static library
