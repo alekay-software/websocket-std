@@ -14,4 +14,4 @@ name = "simple_client"
 path = "simple_client.rs"
 
 [dev-dependencies]
-websocket-std = { version = "0.0.2", path = "../websocket" }
+websocket-std = { version = "0.0.3", path = "../websocket" }
