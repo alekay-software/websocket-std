@@ -37,6 +37,7 @@ You can also use ``threads`` to work with the library. Check [examples](./exampl
 #### Comming
 - Websocket over SSL.
 - Send and receive binary data.
+- Websocket extensions.
 
 ### Sync Server
 
