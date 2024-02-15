@@ -1,6 +1,6 @@
 [package]
 name = "websocket-std"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2021"
 authors = ["Alejandro Palomino <alejandropalomino22@gmail.com>"]
 rust-version = "1.65.0"
@@ -14,8 +14,8 @@ include = [
 
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/alekay2200/websocket-std"
-repository = "https://github.com/alekay2200/websocket-std"
+homepage = "https://github.com/alekay-software/websocket-std"
+repository = "https://github.com/alekay-software/websocket-std"
 description = """
 Websocket implementation using std support, focus on microcontrollers and interoperability with other languages like C through the ffi. 
 """
