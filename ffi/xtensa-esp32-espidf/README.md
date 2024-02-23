@@ -6,7 +6,7 @@ Here you will find the instructions to link the library in different projects.
 
 - Create the folder ``websocket`` inside ``lib`` and copy the static library **libwebsocket_std.a** in the websocket folder.
 - Copy the header file ``websocket-std.h`` inside include folder.
-- Add the build flags in ``platformio.in``
+- Add the build flags in ``platformio.ini``
 
 ```ini
 build_flags = 
