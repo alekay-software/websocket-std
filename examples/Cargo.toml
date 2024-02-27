@@ -13,5 +13,9 @@ path = "thread_client.rs"
 name = "simple_client"
 path = "simple_client.rs"
 
+[[example]]
+name = "simple_tls_client"
+path = "simple_tls_client.rs"
+
 [dev-dependencies]
-websocket-std = { version = "0.0.3", path = "../websocket" }
+websocket-std = { version = "0.0.6", path = "../websocket" }
